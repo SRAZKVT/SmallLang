@@ -5,8 +5,6 @@ import System.Environment
 import System.Exit
 import System.IO
 
-import Debug.Trace
-
 import Lexer
 import Parser
 import Interpreter

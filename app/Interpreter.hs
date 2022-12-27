@@ -3,8 +3,6 @@ module Interpreter where
 import qualified Data.Map.Lazy as Map
 import Data.Maybe
 
-import Debug.Trace
-
 import Lexer
 import Parser
 

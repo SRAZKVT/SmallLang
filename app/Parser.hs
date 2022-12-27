@@ -196,5 +196,5 @@ primary (tk:tks) =
         (PAREN_LEFT  ) ->
             case expression tks of
                 (expr, (Token PAREN_RIGHT _ _ _):tks', err) -> (GroupingExpr expr, tks', err)
-                (expr, tk:tks', err) -> (UnknownExpr, tks', (parseError tk ""):err)
+                (expr, tk:tks', err) -> (UnknownExpr, tk:tks', (parseError tk ""):err)
         (tk'               ) -> (UnknownExpr, tks, [parseError tk "Expect expression"])
