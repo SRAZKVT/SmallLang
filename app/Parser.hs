@@ -89,6 +89,7 @@ statement (tk:tks) =
 printStatement :: [Token] -> (Stmt, [Token], [String])
 printStatement (tk:tks) =
     case tokenType tk of
+        (EOF)        -> (UnknownStmt, (tk:tks), [parseError tk "Print requires an expression encased in parenthesis to print"])
         (PAREN_LEFT) ->
             let (expr, tks', err) = expression tks
             in stmtConsume SEMICOLON $
@@ -105,8 +106,8 @@ exprStatement tks =
 stmtConsume :: TokenType -> (Stmt, [Token], [String]) -> (Stmt, [Token], [String])
 stmtConsume etk (stmt, (Token tk l p lexeme):tks, err)
     | etk == tk = (stmt, tks, err)
-    | otherwise = (stmt, tks, parseError (Token tk l p lexeme) (unwords ["Expected:", show etk,
-                                                                "but got:", show tk]):err)
+    | otherwise = (stmt, (Token tk l p lexeme:tks),
+    parseError (Token tk l p lexeme) (unwords ["Expected:", show etk, "but got:", lexeme]):err)
 
 parseError :: Token -> String -> String
 parseError (Token tk l p lexeme) message =
@@ -114,7 +115,7 @@ parseError (Token tk l p lexeme) message =
 
 
 expression :: [Token] -> (Expr, [Token], [String])
-expression = equality
+expression tks = equality tks
 
 equality :: [Token] -> (Expr, [Token], [String])
 equality tks = equality' $ comparison tks
@@ -161,6 +162,7 @@ unary (tk:tks)
 primary :: [Token] -> (Expr, [Token], [String])
 primary (tk:tks) =
     case tokenType tk of
+        (EOF               ) -> (UnknownExpr, tk:tks, [parseError tk "Expected expression but reached end of file"])
         (IDENTIFIER "false") -> (LiteralExpr (BooleanLiteral False), tks, [])
         (IDENTIFIER  "true") -> (LiteralExpr (BooleanLiteral  True), tks, [])
         (INTEGER          i) -> (LiteralExpr (IntegerLiteral     i), tks, [])

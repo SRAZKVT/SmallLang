@@ -101,7 +101,7 @@ lex f  = let (tks, err, _) = lex' ([], [], LexerState f 1 1)
     where lex' :: ([Token], [String], LexerState) -> ([Token], [String], LexerState)
           lex' (tks, err, l) =
               case getLexerContent l of
-                  ("")        ->      (newToken EOF          l ""  :tks, err, l)
+                  ("")        ->      (newToken EOF          l "End of file"  :tks, err, l)
                   ('/':'/':_) -> lex' (tks, err, updateLexerLine l)
                   ('\n':_)    -> lex' (tks, err, updateLexerLine l)
                   (' ':_)     -> lex' (tks, err, updateLexerState l 1)

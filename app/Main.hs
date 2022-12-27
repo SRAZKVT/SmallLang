@@ -71,7 +71,11 @@ commandRepl = do
                 (tks, []) ->
                     case parse tks of
                         (stmts, []) -> interpret stmts
-                        (_   , err) -> putStrLn $ unlines err
+                        (_   , err) ->
+                            case expression tks of
+                                (expr, _:[], []) -> print $ interpretExpr expr
+                                (_, _:[], err) -> putStrLn $ unlines err
+                                (_,    _,  _) -> putStrLn $ unlines err
                 (_, err) -> putStrLn $ unlines err
     commandRepl
 
@@ -86,7 +90,7 @@ commandDev f = do
     let (stmts, err') = parse tks
     putStrLn "AST:"
     print stmts
-    print err'
+    putStrLn $ unlines err'
     interpret stmts
 
 commandUnknown :: [String] -> IO ()

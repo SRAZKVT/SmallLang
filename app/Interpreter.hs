@@ -28,6 +28,7 @@ interpret :: [Stmt] -> IO ()
 interpret [] = putStr ""
 interpret ((PrintStmt expr):stmts) = interpretPrintStmt expr >> interpret stmts
 interpret ((ExprStmt expr):stmts)  = interpretExprStmt  expr >> interpret stmts
+interpret (UnknownStmt:stmts)      = interpret stmts
 
 interpretPrintStmt :: Expr -> IO ()
 interpretPrintStmt expr =
