@@ -3,6 +3,8 @@ module Interpreter where
 import qualified Data.Map.Lazy as Map
 import Data.Maybe
 
+import Debug.Trace
+
 import Lexer
 import Parser
 
@@ -53,6 +55,9 @@ interpret stmts env =
           interpret' (VarStmt name expr:stmts, io, e) =
               let (out, env) = interpretVarDef name expr e
               in interpret' (stmts, io >> out, env)
+          interpret' (Block stmt:stmts,        io, e) =
+              let (out, Environment _ (Just en)) = interpret stmt $ newEnvWithParent e
+              in interpret' (stmts, io >> out, en)
           interpret' (UnknownStmt:stmts,       io, e)  =  interpret' (stmts, io, e)
 
 interpretPrintStmt :: Expr -> Environment -> (IO (), Environment)
@@ -67,20 +72,31 @@ interpretExprStmt :: Expr -> Environment -> (IO (), Environment)
 interpretExprStmt expr env =
     case interpretExpr expr env of
         (ErrorValue e, envi) -> (putStrLn e, envi)
-        (_,            envi) -> (putStrLn "", envi)
+        (_,            envi) -> (putStr "", envi)
 
 interpretVarDef :: String -> Expr -> Environment -> (IO (), Environment)
 interpretVarDef name expr env =
-    case interpretExpr expr env of
-        (ErrorValue e, envi) -> (putStrLn e, envi)
-        (val, envi)          -> (putStr "", envSetVar name val envi)
+    case envVarExists name env of
+        (False) ->
+            case interpretExpr expr env of
+                (ErrorValue e, envi) -> (putStrLn e, envi)
+                (val, envi)          -> (putStr "", envSetVar name val envi)
+        (True)  -> (putStrLn $ unwords ["Variable", "'" ++ name ++ "'", "is already defined"], env)
 
 envSetVar :: String -> Value -> Environment -> Environment
 envSetVar name val (Environment map env) = Environment (Map.insert name val map) env
 
+envVarExists :: String -> Environment -> Bool
+envVarExists name (Environment map env) =
+    case Map.lookup name map of
+        (Just  _) -> True
+        (Nothing) -> maybe (False) (envVarExists name) env
+
 envGetVar :: String -> Environment -> Value
-envGetVar name (Environment map _) =
-    fromMaybe (ErrorValue (unwords ["variable", name, "is not defined"])) (Map.lookup name map)
+envGetVar name (Environment map env) =
+    case Map.lookup name map of
+        (Just val) -> val
+        (Nothing ) -> maybe (ErrorValue $ unwords ["Variable", "'" ++ name ++ "'", "isn't defined"]) (envGetVar name) env
 
 interpretExpr :: Expr -> Environment -> (Value, Environment)
 interpretExpr (LiteralExpr l)            env = (interpretExprLiteral l, env)

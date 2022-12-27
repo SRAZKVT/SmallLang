@@ -7,12 +7,14 @@ type IdentifierName = String
 data Stmt = ExprStmt               Expr
           | PrintStmt              Expr
           | VarStmt IdentifierName Expr
+          | Block [Stmt]
           | UnknownStmt
 
 instance Show Stmt where
     show (ExprStmt  expr)    = "ExprStmt: " ++ show expr
     show (PrintStmt expr)    = "PrintStmt: " ++ show expr
     show (VarStmt name expr) = "VarDecStmt: '" ++ name ++ "' = " ++ show expr
+    show (Block stmts)       = "Block: " ++ "{" ++ show stmts ++ "}"
     show UnknownStmt         = "UnknownStmt"
 
 data Expr = BinaryExpr Expr Symbol Expr
@@ -20,6 +22,7 @@ data Expr = BinaryExpr Expr Symbol Expr
           | LiteralExpr Literal
           | UnaryExpr Symbol Expr
           | VariableExpr IdentifierName
+          | AssignementExpr IdentifierName Expr
           | UnknownExpr
 
 instance Show Expr where
@@ -28,6 +31,7 @@ instance Show Expr where
     show (LiteralExpr value)              = wrap $ show value
     show (UnaryExpr operator right)       = wrap $ unwords [show operator, show right]
     show (VariableExpr name)              = wrap $ unwords ["variable:", "\"" ++ name ++ "\""]
+    show (AssignementExpr name expr)      = wrap $ unwords ["variable:", "\"" ++ name ++ "\"", "=", show expr]
     show UnknownExpr                      = "{unknown}"
 
 data Symbol = ADD
@@ -109,6 +113,7 @@ statement :: [Token] -> (Stmt, [Token], [String])
 statement (tk:tks) =
     case tokenType tk of
         (IDENTIFIER "print") -> printStatement tks
+        (BRACE_LEFT)         -> block tks
         (_)                  -> exprStatement $ tk:tks
 
 printStatement :: [Token] -> (Stmt, [Token], [String])
@@ -120,7 +125,20 @@ printStatement (tk:tks) =
             in stmtConsume SEMICOLON $
                stmtConsume PAREN_RIGHT
                (PrintStmt expr, tks', err)
-        (_)          -> (UnknownStmt, tks, [parseError tk "Expect '('"])
+        (_)          -> (UnknownStmt, tks, [parseError tk "Print requires an expression encased in parenthesis to print"])
+
+block :: [Token] -> (Stmt, [Token], [String])
+block tks =
+    let (tks', stmts, err) = block' (tks, [], [])
+    in (Block stmts, tks', err)
+    where block' :: ([Token], [Stmt], [String]) -> ([Token], [Stmt], [String])
+          block' (tk:tks, stmts, err) =
+              case tokenType tk of
+                  (EOF)         -> (tk:tks, stmts, (parseError tk "Unclosed block"):err)
+                  (BRACE_RIGHT) -> (tks, stmts, err)
+                  (_)           ->
+                      let (stmt, tks', err') = declaration $ tk:tks
+                      in block' (tks', stmt:stmts, err' ++ err)
 
 exprStatement :: [Token] -> (Stmt, [Token], [String])
 exprStatement tks =
