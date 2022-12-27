@@ -26,6 +26,8 @@ data TokenType = PAREN_LEFT
                | ELIF
                | ELSE
                | SEMICOLON
+               | TRUE
+               | FALSE
                | EOF
 
 instance Show TokenType where
@@ -49,6 +51,8 @@ instance Show TokenType where
     show ELIF           = "TOK_ELIF"
     show ELSE           = "TOK_ELSE"
     show SEMICOLON      = "TOK_SEMICOLON"
+    show TRUE           = "TOK_TRUE"
+    show FALSE          = "TOK_FALSE"
     show EOF            = "EOF"
 
 instance Eq TokenType where
@@ -72,6 +76,8 @@ instance Eq TokenType where
     (==) ELIF ELIF                     = True
     (==) ELSE ELSE                     = True
     (==) SEMICOLON SEMICOLON           = True
+    (==) TRUE TRUE                     = True
+    (==) FALSE FALSE                   = True
     (==) EOF EOF                       = True
     (==) _ _                           = False
 
@@ -139,12 +145,14 @@ lex f  = let (tks, err, _) = lex' ([], [], LexerState f 1 1)
                                       updateLexerState l 1)
 
 identifierTokenType :: Lexeme -> TokenType
-identifierTokenType "var"  = VAR
-identifierTokenType "val"  = VAL
-identifierTokenType "if"   = IF
-identifierTokenType "elif" = ELIF
-identifierTokenType "else" = ELSE
-identifierTokenType l      = IDENTIFIER l
+identifierTokenType "var"   = VAR
+identifierTokenType "val"   = VAL
+identifierTokenType "if"    = IF
+identifierTokenType "elif"  = ELIF
+identifierTokenType "else"  = ELSE
+identifierTokenType "true"  = TRUE
+identifierTokenType "false" = FALSE
+identifierTokenType l       = IDENTIFIER l
 
 stringSize :: String -> Either Int String
 stringSize []          = Right "String reaches end of file"

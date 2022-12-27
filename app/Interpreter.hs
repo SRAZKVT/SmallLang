@@ -1,10 +1,26 @@
 module Interpreter where
 
+import qualified Data.Map.Lazy as Map
+import Data.Maybe
+
+import Debug.Trace
+
 import Lexer
 import Parser
 
 data Value = StringValue String | IntegerValue Integer | BooleanValue Bool | ErrorValue String
 data ValueType = StringType | IntegerType | BooleanType
+
+data Environment = Environment (Map.Map String Value) (Maybe Environment)
+
+instance Show Environment where
+    show (Environment map _) = show map
+
+newEnv :: Environment
+newEnv = Environment Map.empty Nothing
+
+newEnvWithParent :: Environment -> Environment
+newEnvWithParent e = Environment Map.empty (return e)
 
 instance Show Value where
     show (StringValue  s) = "\"" ++ s ++ "\""
@@ -24,32 +40,61 @@ instance Eq ValueType where
     (==) _ _                     = False
 
 -- No interpreter state currently, that will come in later
-interpret :: [Stmt] -> IO ()
-interpret [] = putStr ""
-interpret ((PrintStmt expr):stmts) = interpretPrintStmt expr >> interpret stmts
-interpret ((ExprStmt expr):stmts)  = interpretExprStmt  expr >> interpret stmts
-interpret (UnknownStmt:stmts)      = interpret stmts
+interpret :: [Stmt] -> Environment -> (IO (), Environment)
+interpret stmts env =
+    let (_, io, envi) = interpret' (stmts, putStr "", env)
+    in (io, envi)
+    where interpret' :: ([Stmt], IO (), Environment) -> ([Stmt], IO (), Environment)
+          interpret' ([],                      io, e)  = ([], io, e)
+          interpret' (PrintStmt expr:stmts,    io, e)  =
+              let (out, env) = interpretPrintStmt expr e
+              in interpret' (stmts, io >> out, env)
+          interpret' (ExprStmt expr:stmts,     io, e)  =
+              let (out, env) = interpretExprStmt  expr e
+              in interpret' (stmts, io >> out, env)
+          interpret' (VarStmt name expr:stmts, io, e) =
+              let (out, env) = interpretVarDef name expr e
+              in interpret' (stmts, io >> out, env)
+          interpret' (UnknownStmt:stmts,       io, e)  =  interpret' (stmts, io, e)
 
-interpretPrintStmt :: Expr -> IO ()
-interpretPrintStmt expr =
-    case interpretExpr expr of
-        (StringValue  s) -> putStrLn s
-        (IntegerValue i) -> print i
-        (BooleanValue b) -> print b
-        (ErrorValue   e) -> putStrLn e
+interpretPrintStmt :: Expr -> Environment -> (IO (), Environment)
+interpretPrintStmt expr env =
+    case interpretExpr expr env of
+        (StringValue  s, envi) -> (putStrLn s, envi)
+        (IntegerValue i, envi) -> (print i, envi)
+        (BooleanValue b, envi) -> (print b, envi)
+        (ErrorValue   e, envi) -> (putStrLn e, envi)
 
-interpretExprStmt :: Expr -> IO ()
-interpretExprStmt expr =
-    case interpretExpr expr of
-        (ErrorValue e) -> putStrLn e
-        (_)            -> putStr ""
+interpretExprStmt :: Expr -> Environment -> (IO (), Environment)
+interpretExprStmt expr env =
+    case interpretExpr expr env of
+        (ErrorValue e, envi) -> (putStrLn e, envi)
+        (_,            envi) -> (putStrLn "", envi)
 
-interpretExpr :: Expr -> Value
-interpretExpr (LiteralExpr l) = interpretExprLiteral l
-interpretExpr (GroupingExpr expr) = interpretExpr expr
-interpretExpr (UnaryExpr op expr) = interpretExprUnary op $ interpretExpr expr
-interpretExpr (BinaryExpr left op right) =
-    interpretExprBinary op (interpretExpr left) (interpretExpr right)
+interpretVarDef :: String -> Expr -> Environment -> (IO (), Environment)
+interpretVarDef name expr env =
+    case interpretExpr expr env of
+        (ErrorValue e, envi) -> (putStrLn e, envi)
+        (val, envi)          -> (putStr "", envSetVar name val envi)
+
+envSetVar :: String -> Value -> Environment -> Environment
+envSetVar name val (Environment map env) = Environment (Map.insert name val map) env
+
+envGetVar :: String -> Environment -> Value
+envGetVar name (Environment map _) =
+    fromMaybe (ErrorValue (unwords ["variable", name, "is not defined"])) (Map.lookup name map)
+
+interpretExpr :: Expr -> Environment -> (Value, Environment)
+interpretExpr (LiteralExpr l)            env = (interpretExprLiteral l, env)
+interpretExpr (GroupingExpr expr)        env = interpretExpr expr env
+interpretExpr (UnaryExpr op expr)        env =
+    let (val, envi) = interpretExpr expr env
+    in (interpretExprUnary op val, envi)
+interpretExpr (VariableExpr name)        env = (envGetVar name env, env)
+interpretExpr (BinaryExpr left op right) env =
+    let (val1, env1) = interpretExpr left  env
+        (val2, env2) = interpretExpr right env1
+    in (interpretExprBinary op val1 val2, env)
 
 interpretExprLiteral :: Literal -> Value
 interpretExprLiteral (StringLiteral  s) = StringValue  s
@@ -72,6 +117,7 @@ interpretExprBinary _ _ (ErrorValue s)                      = ErrorValue s
 interpretExprBinary ADD (IntegerValue a) (IntegerValue b)   = IntegerValue (a + b)
 interpretExprBinary SUB (IntegerValue a) (IntegerValue b)   = IntegerValue (a - b)
 interpretExprBinary MUL  (IntegerValue a) (IntegerValue b)  = IntegerValue (a * b)
+interpretExprBinary DIV _                (IntegerValue 0)   = ErrorValue "Division by zero."
 interpretExprBinary DIV (IntegerValue a) (IntegerValue b)   = IntegerValue (a `div` b)
 interpretExprBinary EQU val1 val2                           = isEqual val1 val2
 interpretExprBinary ADD  (StringValue  a) (StringValue  b)  = StringValue (a ++ b)

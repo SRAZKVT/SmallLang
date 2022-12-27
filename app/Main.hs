@@ -5,6 +5,8 @@ import System.Environment
 import System.Exit
 import System.IO
 
+import Debug.Trace
+
 import Lexer
 import Parser
 import Interpreter
@@ -21,7 +23,7 @@ main = do
               exitFailure
         ["ver"] -> putStrLn version
         ["help"] -> commandHelp
-        ["repl"] -> commandRepl
+        ["repl"] -> commandRepl newEnv
         [_]     -> do
               putStrLn "Please input a file on top of a command"
               commandHelp
@@ -54,12 +56,14 @@ commandRun f = do
     case lex f of
         (tks, []) ->
             case parse tks of
-                (stmts, []) -> interpret stmts
+                (stmts, []) ->
+                    let (io, _) = interpret stmts newEnv
+                    in io
                 (_   , err) -> putStrLn $ unlines err
         (_, err) -> putStrLn $ unlines err
 
-commandRepl :: IO ()
-commandRepl = do
+commandRepl :: Environment -> IO ()
+commandRepl env = do
     putStr "> "
     hFlush stdout
     s <- getLine
@@ -70,14 +74,18 @@ commandRepl = do
             case lex s of
                 (tks, []) ->
                     case parse tks of
-                        (stmts, []) -> interpret stmts
+                        (stmts, []) ->
+                            let (io, envi) = interpret stmts env
+                            in io >> commandRepl envi
                         (_   , err) ->
-                            case expression tks of
-                                (expr, _:[], []) -> print $ interpretExpr expr
+                            case expression tks  of
+                                (expr, _:[], []) ->
+                                    let (val, envi) = interpretExpr expr env
+                                    in print val >> commandRepl envi
                                 (_, _:[], err) -> putStrLn $ unlines err
                                 (_,    _,  _) -> putStrLn $ unlines err
                 (_, err) -> putStrLn $ unlines err
-    commandRepl
+    commandRepl env
 
 commandDev :: String -> IO ()
 commandDev f = do
@@ -91,7 +99,10 @@ commandDev f = do
     putStrLn "AST:"
     print stmts
     putStrLn $ unlines err'
-    interpret stmts
+    let (io, envi) = interpret stmts newEnv
+    io
+    print envi
+
 
 commandUnknown :: [String] -> IO ()
 commandUnknown args = do

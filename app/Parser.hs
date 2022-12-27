@@ -2,26 +2,32 @@ module Parser where
 
 import Lexer
 
-data Stmt =   ExprStmt  Expr
-          | PrintStmt Expr
+type IdentifierName = String
+
+data Stmt = ExprStmt               Expr
+          | PrintStmt              Expr
+          | VarStmt IdentifierName Expr
           | UnknownStmt
 
 instance Show Stmt where
-    show (ExprStmt  expr) = "ExprStmt: " ++ show expr
-    show (PrintStmt expr) = "PrintStmt: " ++ show expr
-    show UnknownStmt      = "UnknownStmt"
+    show (ExprStmt  expr)    = "ExprStmt: " ++ show expr
+    show (PrintStmt expr)    = "PrintStmt: " ++ show expr
+    show (VarStmt name expr) = "VarDecStmt: '" ++ name ++ "' = " ++ show expr
+    show UnknownStmt         = "UnknownStmt"
 
 data Expr = BinaryExpr Expr Symbol Expr
           | GroupingExpr Expr
           | LiteralExpr Literal
           | UnaryExpr Symbol Expr
+          | VariableExpr IdentifierName
           | UnknownExpr
 
 instance Show Expr where
     show (BinaryExpr left operator right) = wrap $ unwords [show operator, show left, show right]
     show (GroupingExpr expr)              = wrap $ show expr
-    show (LiteralExpr value)              = show value
+    show (LiteralExpr value)              = wrap $ show value
     show (UnaryExpr operator right)       = wrap $ unwords [show operator, show right]
+    show (VariableExpr name)              = wrap $ unwords ["variable:", "\"" ++ name ++ "\""]
     show UnknownExpr                      = "{unknown}"
 
 data Symbol = ADD
@@ -77,8 +83,27 @@ parse tks =
           parse' (stmts, tks, err)
               | tokenType (head tks) == EOF = (stmts, [], err)
               | otherwise =
-                  let (stmt, tks', err') = statement tks
+                  let (stmt, tks', err') = declaration tks
                   in parse' (stmt:stmts, tks', err' ++ err)
+
+declaration :: [Token] -> (Stmt, [Token], [String])
+declaration (tk:tks) =
+    case tokenType tk of
+        (VAR) -> varDeclaration tks
+        (_)                -> statement (tk:tks)
+
+varDeclaration :: [Token] -> (Stmt, [Token], [String])
+varDeclaration (tk:tks) =
+    case tokenType tk of
+        (EOF         ) -> (UnknownStmt, (tk:tks), [parseError tk "Variables need a name and to be initialized"])
+        (IDENTIFIER s) ->
+            case tokenType $ head tks of
+                (EQUAL    ) ->
+                    let (expr, tks', err) = expression $ tail tks
+                    in stmtConsume SEMICOLON $
+                       (VarStmt s expr, tks', err)
+                (SEMICOLON) -> (UnknownStmt, tail tks, [parseError (head tks) "Uninitialized variables are not supported"])
+                (tk'      ) -> (UnknownStmt, tks, [parseError tk "Expected '=' to initialize variables"])
 
 statement :: [Token] -> (Stmt, [Token], [String])
 statement (tk:tks) =
@@ -162,12 +187,13 @@ unary (tk:tks)
 primary :: [Token] -> (Expr, [Token], [String])
 primary (tk:tks) =
     case tokenType tk of
-        (EOF               ) -> (UnknownExpr, tk:tks, [parseError tk "Expected expression but reached end of file"])
-        (IDENTIFIER "false") -> (LiteralExpr (BooleanLiteral False), tks, [])
-        (IDENTIFIER  "true") -> (LiteralExpr (BooleanLiteral  True), tks, [])
-        (INTEGER          i) -> (LiteralExpr (IntegerLiteral     i), tks, [])
-        (STRING           s) -> (LiteralExpr (StringLiteral      s), tks, [])
-        (PAREN_LEFT        ) ->
+        (EOF         ) -> (UnknownExpr, tk:tks, [parseError tk "Expected expression but reached end of file"])
+        (FALSE       ) -> (LiteralExpr (BooleanLiteral False), tks, [])
+        (TRUE        ) -> (LiteralExpr (BooleanLiteral  True), tks, [])
+        (INTEGER    i) -> (LiteralExpr (IntegerLiteral     i), tks, [])
+        (IDENTIFIER s) -> (VariableExpr s, tks, [])
+        (STRING     s) -> (LiteralExpr (StringLiteral      s), tks, [])
+        (PAREN_LEFT  ) ->
             case expression tks of
                 (expr, (Token PAREN_RIGHT _ _ _):tks', err) -> (GroupingExpr expr, tks', err)
                 (expr, tk:tks', err) -> (UnknownExpr, tks', (parseError tk ""):err)
