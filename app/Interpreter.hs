@@ -55,26 +55,26 @@ interpretExprLiteral (StringLiteral  s) = StringValue  s
 interpretExprLiteral (IntegerLiteral i) = IntegerValue i
 interpretExprLiteral (BooleanLiteral b) = BooleanValue b
 
-interpretExprUnary :: Token -> Value -> Value
-interpretExprUnary _ (ErrorValue s)       = ErrorValue s
-interpretExprUnary MINUS (IntegerValue i) = IntegerValue (negate i)
-interpretExprUnary BANG (BooleanValue b)  = BooleanValue (not b)
-interpretExprUnary op val                 = ErrorValue (unwords
+interpretExprUnary :: Symbol -> Value -> Value
+interpretExprUnary _ (ErrorValue s)     = ErrorValue s
+interpretExprUnary SUB (IntegerValue i) = IntegerValue (negate i)
+interpretExprUnary NOT (BooleanValue b) = BooleanValue (not b)
+interpretExprUnary op val               = ErrorValue (unwords
                                                         ["Unknown unary expression",
                                                         show op, "with type",
                                                         "'" ++ show (typeOfValue val) ++ "'"])
 
-interpretExprBinary :: Token -> Value -> Value -> Value
+interpretExprBinary :: Symbol -> Value -> Value -> Value
 interpretExprBinary _ (ErrorValue s1) (ErrorValue s2)       = ErrorValue (s1 ++ s2)
 interpretExprBinary _ (ErrorValue s) _                      = ErrorValue s
 interpretExprBinary _ _ (ErrorValue s)                      = ErrorValue s
-interpretExprBinary PLUS  (IntegerValue a) (IntegerValue b) = IntegerValue (a + b)
-interpretExprBinary MINUS (IntegerValue a) (IntegerValue b) = IntegerValue (a - b)
-interpretExprBinary STAR  (IntegerValue a) (IntegerValue b) = IntegerValue (a * b)
-interpretExprBinary SLASH (IntegerValue a) (IntegerValue b) = IntegerValue (a `div` b)
-interpretExprBinary DOUBLE_EQUAL val1 val2                  = isEqual val1 val2
-interpretExprBinary PLUS  (StringValue  a) (StringValue  b) = StringValue (a ++ b)
-interpretExprBinary PLUS  (StringValue  s) val              =
+interpretExprBinary ADD (IntegerValue a) (IntegerValue b)   = IntegerValue (a + b)
+interpretExprBinary SUB (IntegerValue a) (IntegerValue b)   = IntegerValue (a - b)
+interpretExprBinary MUL  (IntegerValue a) (IntegerValue b)  = IntegerValue (a * b)
+interpretExprBinary DIV (IntegerValue a) (IntegerValue b)   = IntegerValue (a `div` b)
+interpretExprBinary EQU val1 val2                           = isEqual val1 val2
+interpretExprBinary ADD  (StringValue  a) (StringValue  b)  = StringValue (a ++ b)
+interpretExprBinary ADD  (StringValue  s) val               =
     let (StringValue s') = cast val StringType
     in StringValue (s ++ s')
 interpretExprBinary op val1 val2                            = ErrorValue (unwords

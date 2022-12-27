@@ -81,7 +81,7 @@ commandDev f = do
     putStrLn f
     let (tks, err) = lex f
     putStrLn "Tokens:"
-    print tks
+    print $ map tokenType tks
     print err
     let (stmts, err') = parse tks
     putStrLn "AST:"

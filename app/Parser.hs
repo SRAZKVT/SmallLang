@@ -3,17 +3,19 @@ module Parser where
 import Lexer
 
 data Stmt =   ExprStmt  Expr
-            | PrintStmt Expr
+          | PrintStmt Expr
+          | UnknownStmt
 
 instance Show Stmt where
     show (ExprStmt  expr) = "ExprStmt: " ++ show expr
     show (PrintStmt expr) = "PrintStmt: " ++ show expr
+    show UnknownStmt      = "UnknownStmt"
 
-data Expr =   BinaryExpr Expr Token Expr
-            | GroupingExpr Expr
-            | LiteralExpr Literal
-            | UnaryExpr Token Expr
-            | UnknownExpr
+data Expr = BinaryExpr Expr Symbol Expr
+          | GroupingExpr Expr
+          | LiteralExpr Literal
+          | UnaryExpr Symbol Expr
+          | UnknownExpr
 
 instance Show Expr where
     show (BinaryExpr left operator right) = wrap $ unwords [show operator, show left, show right]
@@ -21,6 +23,30 @@ instance Show Expr where
     show (LiteralExpr value)              = show value
     show (UnaryExpr operator right)       = wrap $ unwords [show operator, show right]
     show UnknownExpr                      = "{unknown}"
+
+data Symbol = ADD
+            | SUB
+            | MUL
+            | DIV
+            | EQU
+            | NOT
+
+instance Show Symbol where
+    show ADD = "+"
+    show SUB = "-"
+    show MUL = "*"
+    show DIV = "/"
+    show EQU = "=="
+    show NOT = "!"
+
+instance Eq Symbol where
+    (==) ADD ADD = True
+    (==) SUB SUB = True
+    (==) MUL MUL = True
+    (==) DIV DIV = True
+    (==) EQU EQU = True
+    (==) NOT NOT = True
+    (==) _ _     = False
 
 wrap :: String -> String
 wrap s = "(" ++ s ++ ")"
@@ -32,26 +58,43 @@ instance Show Literal where
     show (StringLiteral  s) = "'" ++ s ++ "'"
     show (BooleanLiteral b) = show b
 
+symbolFromToken :: Token -> Symbol
+symbolFromToken tk = symbolFromTokenType $ tokenType tk
+
+symbolFromTokenType :: TokenType -> Symbol
+symbolFromTokenType PLUS         = ADD
+symbolFromTokenType MINUS        = SUB
+symbolFromTokenType STAR         = MUL
+symbolFromTokenType SLASH        = DIV
+symbolFromTokenType DOUBLE_EQUAL = EQU
+symbolFromTokenType BANG         = NOT
+
 parse :: [Token] -> ([Stmt], [String])
 parse tks =
     let (stmts, _, err) = parse' ([], tks, [])
     in (reverse stmts, reverse err)
     where parse' :: ([Stmt], [Token], [String]) -> ([Stmt], [Token], [String])
-          parse' (stmts, [EOF], err) = (stmts, [EOF], err)
-          parse' (stmts, tks, err) =
-              let (stmt, tks', err') = statement tks
-              in parse' (stmt:stmts, tks', err' ++ err)
-    
+          parse' (stmts, tks, err)
+              | tokenType (head tks) == EOF = (stmts, [], err)
+              | otherwise =
+                  let (stmt, tks', err') = statement tks
+                  in parse' (stmt:stmts, tks', err' ++ err)
+
 statement :: [Token] -> (Stmt, [Token], [String])
-statement ((IDENTIFIER "print"):tks) = printStatement tks
-statement tks                        = exprStatement tks
+statement (tk:tks) =
+    case tokenType tk of
+        (IDENTIFIER "print") -> printStatement tks
+        (_)                  -> exprStatement $ tk:tks
 
 printStatement :: [Token] -> (Stmt, [Token], [String])
-printStatement (PAREN_LEFT:tks) =
-    let (expr, tks', err) = expression tks
-    in stmtConsume SEMICOLON $
-       stmtConsume PAREN_RIGHT
-       (PrintStmt expr, tks', err)
+printStatement (tk:tks) =
+    case tokenType tk of
+        (PAREN_LEFT) ->
+            let (expr, tks', err) = expression tks
+            in stmtConsume SEMICOLON $
+               stmtConsume PAREN_RIGHT
+               (PrintStmt expr, tks', err)
+        (_)          -> (UnknownStmt, tks, [parseError tk "Expect '('"])
 
 exprStatement :: [Token] -> (Stmt, [Token], [String])
 exprStatement tks =
@@ -59,11 +102,15 @@ exprStatement tks =
     in stmtConsume SEMICOLON
        (ExprStmt expr, tks', err)
 
-stmtConsume :: Token -> (Stmt, [Token], [String]) -> (Stmt, [Token], [String])
-stmtConsume tk (stmt, xs:tks, err)
-    | tk == xs = (stmt, tks, err)
-    | otherwise = (stmt, tks, unwords ["Unexpected token! Expected:", show tk,
-                                       "but got:", show xs]:err)
+stmtConsume :: TokenType -> (Stmt, [Token], [String]) -> (Stmt, [Token], [String])
+stmtConsume etk (stmt, (Token tk l p lexeme):tks, err)
+    | etk == tk = (stmt, tks, err)
+    | otherwise = (stmt, tks, parseError (Token tk l p lexeme) (unwords ["Expected:", show etk,
+                                                                "but got:", show tk]):err)
+
+parseError :: Token -> String -> String
+parseError (Token tk l p lexeme) message =
+    "[" ++ show l ++ ":" ++ show p ++ "]: \"" ++ lexeme ++ "\" -> " ++ message
 
 
 expression :: [Token] -> (Expr, [Token], [String])
@@ -72,52 +119,54 @@ expression = equality
 equality :: [Token] -> (Expr, [Token], [String])
 equality tks = equality' $ comparison tks
     where equality' :: (Expr, [Token], [String]) -> (Expr, [Token], [String])
-          equality' (expr, tks, err)
-              | head tks `elem` [DOUBLE_EQUAL] =
-                  let (expr', tks', err') = comparison (tail tks)
-                  in equality' (BinaryExpr expr (head tks) expr', tks', err' ++ err)
-              | otherwise                      = (expr, tks, err)
+          equality' (expr, tk:tks, err)
+              |  tokenType tk `elem` [DOUBLE_EQUAL] =
+                  let (expr', tks', err') = comparison tks
+                  in equality' (BinaryExpr expr (symbolFromToken tk) expr', tks', err' ++ err)
+              | otherwise = (expr, tk:tks, err)
 
 comparison :: [Token] -> (Expr, [Token], [String])
 comparison tks = comparison' $ term tks
     where comparison' :: (Expr, [Token], [String]) -> (Expr, [Token], [String])
-          comparison' (expr, tks, err)
-              | head tks `elem` [] =
-                  let (expr', tks', err') = term (tail tks)
-                  in comparison' (BinaryExpr expr (head tks) expr', tks', err' ++ err)
-              | otherwise                 = (expr, tks, err)
+          comparison' (expr, tk:tks, err)
+              | tokenType tk `elem` [] =
+                  let (expr', tks', err') = term tks
+                  in comparison' (BinaryExpr expr (symbolFromToken tk) expr', tks', err' ++ err)
+              | otherwise = (expr, tk:tks, err)
 
 term :: [Token] -> (Expr, [Token], [String])
 term tks = term' $ factor tks
     where term' :: (Expr, [Token], [String]) -> (Expr, [Token], [String])
-          term' (expr, tks, err)
-              | head tks `elem` [PLUS, MINUS] =
-                  let (expr', tks', err') = factor (tail tks)
-                  in term' (BinaryExpr expr (head tks) expr', tks', err' ++ err)
-              | otherwise                 = (expr, tks, err)
+          term' (expr, tk:tks, err)
+              | tokenType tk `elem` [PLUS, MINUS] =
+                  let (expr', tks', err') = factor tks
+                  in term' (BinaryExpr expr (symbolFromToken tk) expr', tks', err' ++ err)
+              | otherwise = (expr, tk:tks, err)
 
 factor :: [Token] -> (Expr, [Token], [String])
 factor tks = factor' $ unary tks
     where factor' :: (Expr, [Token], [String]) -> (Expr, [Token], [String])
-          factor' (expr, tks, err)
-              | head tks `elem` [STAR, SLASH] =
-                  let (expr', tks', err') = unary (tail tks)
-                  in factor' (BinaryExpr expr (head tks) expr', tks', err' ++ err)
-              | otherwise                 = (expr, tks, err)
+          factor' (expr, tk:tks, err)
+              | tokenType tk `elem` [STAR, SLASH] =
+                  let (expr', tks', err') = unary tks
+                  in factor' (BinaryExpr expr (symbolFromToken tk) expr', tks', err' ++ err)
+              | otherwise = (expr, tk:tks, err)
 
 unary :: [Token] -> (Expr, [Token], [String])
 unary (tk:tks)
-    | tk `elem` [MINUS, BANG] = let (expr, tks', err) = unary tks
-                                in (UnaryExpr tk expr, tks', err)
+    | tokenType tk `elem` [MINUS, BANG] = let (expr, tks', err) = unary tks
+                                in (UnaryExpr (symbolFromToken tk) expr, tks', err)
     | otherwise               = primary (tk:tks)
 
 primary :: [Token] -> (Expr, [Token], [String])
-primary ((IDENTIFIER "false"):tks) = (LiteralExpr (BooleanLiteral False), tks, [])
-primary ((IDENTIFIER "true"):tks) = (LiteralExpr (BooleanLiteral True), tks, [])
-primary ((INTEGER i):tks) = (LiteralExpr (IntegerLiteral i), tks, [])
-primary ((STRING s):tks) = (LiteralExpr (StringLiteral s), tks, [])
-primary (PAREN_LEFT:tks) = let (expr, tks', err) = expression tks
-                           in if head tks' == PAREN_RIGHT
-                              then (GroupingExpr expr, tail tks', err)
-                              else (GroupingExpr expr, tks', "Expect ')' after expression":err)
-primary tks = (UnknownExpr, tks, ["Expect expression bug got: '" ++ show (head tks) ++ "'"])
+primary (tk:tks) =
+    case tokenType tk of
+        (IDENTIFIER "false") -> (LiteralExpr (BooleanLiteral False), tks, [])
+        (IDENTIFIER  "true") -> (LiteralExpr (BooleanLiteral  True), tks, [])
+        (INTEGER          i) -> (LiteralExpr (IntegerLiteral     i), tks, [])
+        (STRING           s) -> (LiteralExpr (StringLiteral      s), tks, [])
+        (PAREN_LEFT        ) ->
+            case expression tks of
+                (expr, (Token PAREN_RIGHT _ _ _):tks', err) -> (GroupingExpr expr, tks', err)
+                (expr, tk:tks', err) -> (UnknownExpr, tks', (parseError tk ""):err)
+        (tk'               ) -> (UnknownExpr, tks, [parseError tk "Expect expression"])
