@@ -55,8 +55,8 @@ commandRun f = do
         (tks, []) ->
             case parse tks of
                 (stmts, []) ->
-                    let (io, _) = interpret stmts newEnv
-                    in io
+                    let (io, _, success) = interpret stmts newEnv
+                    in io >> if success then exitSuccess else exitFailure
                 (_   , err) -> putStrLn $ unlines err
         (_, err) -> putStrLn $ unlines err
 
@@ -73,7 +73,7 @@ commandRepl env = do
                 (tks, []) ->
                     case parse tks of
                         (stmts, []) ->
-                            let (io, envi) = interpret stmts env
+                            let (io, envi, _) = interpret stmts env
                             in io >> commandRepl envi
                         (_   , err) ->
                             case expression tks  of
@@ -97,7 +97,7 @@ commandDev f = do
     putStrLn "AST:"
     print stmts
     putStrLn $ unlines err'
-    let (io, envi) = interpret stmts newEnv
+    let (io, envi, _) = interpret stmts newEnv
     io
     print envi
 

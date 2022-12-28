@@ -158,7 +158,19 @@ parseError (Token tk l p lexeme) message =
 
 
 expression :: [Token] -> (Expr, [Token], [String])
-expression tks = equality tks
+expression tks = assignement tks
+
+assignement :: [Token] -> (Expr, [Token], [String])
+assignement tks =
+    let (expr, tk:tks', err) = equality tks
+    in
+        case tokenType tk of
+            (EQUAL) ->
+                case (expr, assignement tks') of
+                    (VariableExpr name, (expr, tks'', err')) ->
+                        (AssignementExpr name expr, tks'', err' ++ err)
+                    (_, (expr, tks'', err')) -> (UnknownExpr, tks'', (parseError tk "Unassignable target"):(err' ++ err))
+            (_    ) -> (expr, tk:tks', err)
 
 equality :: [Token] -> (Expr, [Token], [String])
 equality tks = equality' $ comparison tks
