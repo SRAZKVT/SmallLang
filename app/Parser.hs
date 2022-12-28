@@ -130,7 +130,7 @@ printStatement (tk:tks) =
 block :: [Token] -> (Stmt, [Token], [String])
 block tks =
     let (tks', stmts, err) = block' (tks, [], [])
-    in (Block stmts, tks', err)
+    in (Block $ reverse stmts, tks', err)
     where block' :: ([Token], [Stmt], [String]) -> ([Token], [Stmt], [String])
           block' (tk:tks, stmts, err) =
               case tokenType tk of

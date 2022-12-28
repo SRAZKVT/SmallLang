@@ -90,7 +90,7 @@ envVarExists :: String -> Environment -> Bool
 envVarExists name (Environment map env) =
     case Map.lookup name map of
         (Just  _) -> True
-        (Nothing) -> maybe (False) (envVarExists name) env
+        (Nothing) -> maybe False (envVarExists name) env
 
 envGetVar :: String -> Environment -> Value
 envGetVar name (Environment map env) =
