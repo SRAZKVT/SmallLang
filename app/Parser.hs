@@ -8,14 +8,18 @@ data Stmt = ExprStmt               Expr
           | PrintStmt              Expr
           | VarStmt IdentifierName Expr
           | Block [Stmt]
+          | IfStmt Expr Stmt (Maybe Stmt)
           | UnknownStmt
 
 instance Show Stmt where
-    show (ExprStmt  expr)    = "ExprStmt: " ++ show expr
-    show (PrintStmt expr)    = "PrintStmt: " ++ show expr
-    show (VarStmt name expr) = "VarDecStmt: '" ++ name ++ "' = " ++ show expr
-    show (Block stmts)       = "Block: " ++ "{" ++ show stmts ++ "}"
-    show UnknownStmt         = "UnknownStmt"
+    show (ExprStmt  expr)                              = "ExprStmt: " ++ show expr
+    show (PrintStmt expr)                              = "PrintStmt: " ++ show expr
+    show (VarStmt name expr)                           = "VarDecStmt: '" ++ name ++ "' = " ++ show expr
+    show (Block stmts)                                 = "Block: " ++ "{" ++ show stmts ++ "}"
+    show (IfStmt expr thenBranch (Just elseBranch))    = unwords ["IfStmt:", show expr, show thenBranch,
+                                                              "otherwise", show elseBranch]
+    show (IfStmt expr thenBranch Nothing)              = unwords ["IfStmt:", show expr, show thenBranch]
+    show UnknownStmt                                   = "UnknownStmt"
 
 data Expr = BinaryExpr Expr Symbol Expr
           | GroupingExpr Expr
@@ -114,6 +118,7 @@ statement (tk:tks) =
     case tokenType tk of
         (IDENTIFIER "print") -> printStatement tks
         (BRACE_LEFT)         -> block tks
+        (IF)                 -> ifStatement tks
         (_)                  -> exprStatement $ tk:tks
 
 printStatement :: [Token] -> (Stmt, [Token], [String])
@@ -139,6 +144,22 @@ block tks =
                   (_)           ->
                       let (stmt, tks', err') = declaration $ tk:tks
                       in block' (tks', stmt:stmts, err' ++ err)
+
+ifStatement :: [Token] -> (Stmt, [Token], [String])
+ifStatement (tk:tks) =
+    case tokenType tk of
+        (PAREN_LEFT) ->
+            let (expr, tk':tks', err) = expression tks
+            in case tokenType tk' of
+                   (PAREN_RIGHT) ->
+                       let (thenBranch, tk'':tks'', err') = statement tks'
+                       in case tokenType tk'' of
+                           (ELSE) ->
+                               let (elseBranch, tks''', err'') = statement tks''
+                               in (IfStmt expr thenBranch (Just elseBranch), tks''', err'' ++ err' ++ err)
+                           (_) -> (IfStmt expr thenBranch Nothing, tk'':tks'', err' ++ err)
+                   (_          ) -> (UnknownStmt, tk':tks', (parseError tk' "An if statement require it's expression closed by a right parenthesis"):err)
+        (_         ) -> (UnknownStmt, tk:tks, [parseError tk "An if statement require it's expression opened by a left parenthesis"])
 
 exprStatement :: [Token] -> (Stmt, [Token], [String])
 exprStatement tks =

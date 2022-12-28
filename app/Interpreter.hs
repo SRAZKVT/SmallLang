@@ -38,7 +38,6 @@ instance Eq ValueType where
     (==) IntegerType IntegerType = True
     (==) _ _                     = False
 
--- No interpreter state currently, that will come in later
 interpret :: [Stmt] -> Environment -> (IO (), Environment, Bool)
 interpret stmts env =
     let (stmt, io, envi) = interpret' (stmts, putStr "", env)
@@ -60,6 +59,10 @@ interpret stmts env =
           interpret' (Block stmt:stmts,        io, e) =
               let (out, Environment _ (Just en), success) = interpret stmt $ newEnvWithParent e
                   ret = (stmts, io >> out, en)
+              in if success then interpret' ret else ret
+          interpret' (IfStmt expr thenBranch elseBranch:stmts, io, e) =
+              let (out, env, success) = interpretIfStmt expr thenBranch elseBranch e
+                  ret = (stmts, io >> out, env)
               in if success then interpret' ret else ret
           interpret' (UnknownStmt:stmts,       io, e)  = interpret' (stmts, io, e)
 
@@ -85,6 +88,17 @@ interpretVarDef name expr env =
                 (ErrorValue e, envi) -> (putStrLn e, envi, False)
                 (val, envi)          -> (putStr "", envSetVar name val envi, True)
         (True)  -> (putStrLn $ unwords ["Variable", "'" ++ name ++ "'", "is already defined"], env, False)
+
+interpretIfStmt :: Expr -> Stmt -> Maybe Stmt -> Environment -> (IO (), Environment, Bool)
+interpretIfStmt expr ifBranch elseBranch env =
+    case interpretExpr expr env of
+        (ErrorValue      e,  envi) -> (putStrLn e, envi, False)
+        (BooleanValue True,  envi) -> interpret [ifBranch] envi
+        (BooleanValue False, envi) ->
+            case elseBranch of
+                (Just branch) -> interpret [branch] envi
+                (Nothing    ) -> (putStr "", envi, True)
+        (_,                  envi) -> (putStrLn "An if statement require a boolean result to its expression", envi, False)
 
 envSetVar :: String -> Value -> Environment -> Environment
 envSetVar name val (Environment map env) = Environment (Map.insert name val map) env
