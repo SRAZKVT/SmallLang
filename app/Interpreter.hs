@@ -142,9 +142,10 @@ interpretExpr (AssignementExpr name expr) env =
     let (result, envi) = interpretExpr expr env
     in envSetExistingVar name result envi
 interpretExpr (BinaryExpr left op right)  env =
-    let (val1, env1) = interpretExpr left  env
+    let (val1, env1) = interpretExpr left env
         (val2, env2) = interpretExpr right env1
     in (interpretExprBinary op val1 val2, env)
+interpretExpr (LogicalExpr left op right) env = interpretExprLogical left op right env
 
 interpretExprLiteral :: Literal -> Value
 interpretExprLiteral (StringLiteral  s) = StringValue  s
@@ -180,6 +181,17 @@ interpretExprBinary op val1 val2                            = ErrorValue (unword
                                                         "'" ++ show (typeOfValue val1) ++ "'",
                                                         "and",
                                                         "'" ++ show (typeOfValue val2) ++ "'"])
+
+
+interpretExprLogical :: Expr -> Symbol -> Expr -> Environment -> (Value, Environment)
+interpretExprLogical left LOR right env =
+    case interpretExpr left env of
+        (BooleanValue True,  en) -> (BooleanValue True, en)
+        (BooleanValue False, en) -> interpretExpr right en
+interpretExprLogical left LAND right env =
+    case interpretExpr left env of
+        (BooleanValue True,  en) -> interpretExpr right en
+        (BooleanValue False, en) -> (BooleanValue False, en)
 
 isEqual :: Value -> Value -> Value
 isEqual val1 val2

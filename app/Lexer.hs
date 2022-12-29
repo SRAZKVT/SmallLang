@@ -17,6 +17,8 @@ data TokenType = PAREN_LEFT
                | STAR
                | SLASH
                | BANG
+               | DOUBLE_AMPERSAND
+               | DOUBLE_PIPE
                | STRING String
                | INTEGER Integer
                | IDENTIFIER Lexeme
@@ -31,55 +33,59 @@ data TokenType = PAREN_LEFT
                | EOF
 
 instance Show TokenType where
-    show PAREN_LEFT     = "TOK_PAREN_LEFT"
-    show PAREN_RIGHT    = "TOK_PAREN_RIGHT"
-    show BRACE_LEFT     = "TOK_BRACE_LEFT"
-    show BRACE_RIGHT    = "TOK_BRACE_RIGHT"
-    show EQUAL          = "TOK_EQUAL"
-    show DOUBLE_EQUAL   = "TOK_DOUBLE_EQUAL"
-    show PLUS           = "TOK_PLUS"
-    show MINUS          = "TOK_MINUS"
-    show STAR           = "TOK_STAR"
-    show SLASH          = "TOK_SLASH"
-    show BANG           = "TOK_BANG"
-    show (STRING s)     = "TOK_STR: '" ++ s ++ "'"
-    show (INTEGER i)    = "TOK_INT: '" ++ show i ++ "'"
-    show (IDENTIFIER l) = "TOK_IDENTIFIER: '" ++ l ++ "'"
-    show VAR            = "TOK_VAR"
-    show VAL            = "TOK_VAL"
-    show IF             = "TOK_IF"
-    show ELIF           = "TOK_ELIF"
-    show ELSE           = "TOK_ELSE"
-    show SEMICOLON      = "TOK_SEMICOLON"
-    show TRUE           = "TOK_TRUE"
-    show FALSE          = "TOK_FALSE"
-    show EOF            = "EOF"
+    show PAREN_LEFT            = "TOK_PAREN_LEFT"
+    show PAREN_RIGHT           = "TOK_PAREN_RIGHT"
+    show BRACE_LEFT            = "TOK_BRACE_LEFT"
+    show BRACE_RIGHT           = "TOK_BRACE_RIGHT"
+    show EQUAL                 = "TOK_EQUAL"
+    show DOUBLE_EQUAL          = "TOK_DOUBLE_EQUAL"
+    show PLUS                  = "TOK_PLUS"
+    show MINUS                 = "TOK_MINUS"
+    show STAR                  = "TOK_STAR"
+    show SLASH                 = "TOK_SLASH"
+    show BANG                  = "TOK_BANG"
+    show DOUBLE_AMPERSAND      = "TOK_DOUBLE_AMPERSAND"
+    show DOUBLE_PIPE           = "TOK_DOUBLE_PIPE"
+    show (STRING s)            = "TOK_STR: '" ++ s ++ "'"
+    show (INTEGER i)           = "TOK_INT: '" ++ show i ++ "'"
+    show (IDENTIFIER l)        = "TOK_IDENTIFIER: '" ++ l ++ "'"
+    show VAR                   = "TOK_VAR"
+    show VAL                   = "TOK_VAL"
+    show IF                    = "TOK_IF"
+    show ELIF                  = "TOK_ELIF"
+    show ELSE                  = "TOK_ELSE"
+    show SEMICOLON             = "TOK_SEMICOLON"
+    show TRUE                  = "TOK_TRUE"
+    show FALSE                 = "TOK_FALSE"
+    show EOF                   = "EOF"
 
 instance Eq TokenType where
-    (==) PAREN_LEFT PAREN_LEFT         = True
-    (==) PAREN_RIGHT PAREN_RIGHT       = True
-    (==) BRACE_LEFT BRACE_LEFT         = True
-    (==) BRACE_RIGHT BRACE_RIGHT       = True
-    (==) EQUAL EQUAL                   = True
-    (==) DOUBLE_EQUAL DOUBLE_EQUAL     = True
-    (==) PLUS PLUS                     = True
-    (==) MINUS MINUS                   = True
-    (==) STAR STAR                     = True
-    (==) SLASH SLASH                   = True
-    (==) BANG BANG                     = True
-    (==) (STRING a) (STRING b)         = a == b
-    (==) (INTEGER a) (INTEGER b)       = a == b
-    (==) (IDENTIFIER a) (IDENTIFIER b) = a == b
-    (==) VAR VAR                       = True
-    (==) VAL VAL                       = True
-    (==) IF IF                         = True
-    (==) ELIF ELIF                     = True
-    (==) ELSE ELSE                     = True
-    (==) SEMICOLON SEMICOLON           = True
-    (==) TRUE TRUE                     = True
-    (==) FALSE FALSE                   = True
-    (==) EOF EOF                       = True
-    (==) _ _                           = False
+    (==) PAREN_LEFT PAREN_LEFT             = True
+    (==) PAREN_RIGHT PAREN_RIGHT           = True
+    (==) BRACE_LEFT BRACE_LEFT             = True
+    (==) BRACE_RIGHT BRACE_RIGHT           = True
+    (==) EQUAL EQUAL                       = True
+    (==) DOUBLE_EQUAL DOUBLE_EQUAL         = True
+    (==) PLUS PLUS                         = True
+    (==) MINUS MINUS                       = True
+    (==) STAR STAR                         = True
+    (==) SLASH SLASH                       = True
+    (==) BANG BANG                         = True
+    (==) DOUBLE_AMPERSAND DOUBLE_AMPERSAND = True
+    (==) DOUBLE_PIPE DOUBLE_PIPE           = True
+    (==) (STRING a) (STRING b)             = a == b
+    (==) (INTEGER a) (INTEGER b)           = a == b
+    (==) (IDENTIFIER a) (IDENTIFIER b)     = a == b
+    (==) VAR VAR                           = True
+    (==) VAL VAL                           = True
+    (==) IF IF                             = True
+    (==) ELIF ELIF                         = True
+    (==) ELSE ELSE                         = True
+    (==) SEMICOLON SEMICOLON               = True
+    (==) TRUE TRUE                         = True
+    (==) FALSE FALSE                       = True
+    (==) EOF EOF                           = True
+    (==) _ _                               = False
 
 data LexerState = LexerState String Line Position
 
@@ -113,18 +119,20 @@ lex f  = let (tks, err, _) = lex' ([], [], LexerState f 1 1)
                   (' ':_)     -> lex' (tks, err, updateLexerState l 1)
                   ('\t':_)    -> lex' (tks, err, updateLexerState l 1)
                   ('\r':_)    -> lex' (tks, err, updateLexerState l 1)
-                  (';':_)     -> lex' (newToken SEMICOLON    l ";" :tks, err, updateLexerState l 1)
-                  ('(':_)     -> lex' (newToken PAREN_LEFT   l "(" :tks, err, updateLexerState l 1)
-                  (')':_)     -> lex' (newToken PAREN_RIGHT  l ")" :tks, err, updateLexerState l 1)
-                  ('{':_)     -> lex' (newToken BRACE_LEFT   l "{" :tks, err, updateLexerState l 1)
-                  ('}':_)     -> lex' (newToken BRACE_RIGHT  l "}" :tks, err, updateLexerState l 1)
-                  ('+':_)     -> lex' (newToken PLUS         l "+" :tks, err, updateLexerState l 1)
-                  ('-':_)     -> lex' (newToken MINUS        l "-" :tks, err, updateLexerState l 1)
-                  ('*':_)     -> lex' (newToken STAR         l "*" :tks, err, updateLexerState l 1)
-                  ('!':_)     -> lex' (newToken BANG         l "!" :tks, err, updateLexerState l 1)
-                  ('/':_)     -> lex' (newToken SLASH        l "/" :tks, err, updateLexerState l 1)
-                  ('=':'=':_) -> lex' (newToken DOUBLE_EQUAL l "==":tks, err, updateLexerState l 2)
-                  ('=':_)     -> lex' (newToken EQUAL        l "=" :tks, err, updateLexerState l 1)
+                  (';':_)     -> lex' (newToken SEMICOLON        l ";" :tks, err, updateLexerState l 1)
+                  ('(':_)     -> lex' (newToken PAREN_LEFT       l "(" :tks, err, updateLexerState l 1)
+                  (')':_)     -> lex' (newToken PAREN_RIGHT      l ")" :tks, err, updateLexerState l 1)
+                  ('{':_)     -> lex' (newToken BRACE_LEFT       l "{" :tks, err, updateLexerState l 1)
+                  ('}':_)     -> lex' (newToken BRACE_RIGHT      l "}" :tks, err, updateLexerState l 1)
+                  ('+':_)     -> lex' (newToken PLUS             l "+" :tks, err, updateLexerState l 1)
+                  ('-':_)     -> lex' (newToken MINUS            l "-" :tks, err, updateLexerState l 1)
+                  ('*':_)     -> lex' (newToken STAR             l "*" :tks, err, updateLexerState l 1)
+                  ('!':_)     -> lex' (newToken BANG             l "!" :tks, err, updateLexerState l 1)
+                  ('/':_)     -> lex' (newToken SLASH            l "/" :tks, err, updateLexerState l 1)
+                  ('=':'=':_) -> lex' (newToken DOUBLE_EQUAL     l "==":tks, err, updateLexerState l 2)
+                  ('&':'&':_) -> lex' (newToken DOUBLE_AMPERSAND l "&&":tks, err, updateLexerState l 2)
+                  ('|':'|':_) -> lex' (newToken DOUBLE_PIPE      l "||":tks, err, updateLexerState l 2)
+                  ('=':_)     -> lex' (newToken EQUAL            l "=" :tks, err, updateLexerState l 1)
                   ('"':fs)    ->
                       case string fs of
                           (Left s) -> lex' (newToken (STRING s) l ("\"" ++ s ++ "\""):tks,

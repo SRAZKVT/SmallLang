@@ -27,6 +27,7 @@ data Expr = BinaryExpr Expr Symbol Expr
           | UnaryExpr Symbol Expr
           | VariableExpr IdentifierName
           | AssignementExpr IdentifierName Expr
+          | LogicalExpr Expr Symbol Expr
           | UnknownExpr
 
 instance Show Expr where
@@ -35,7 +36,9 @@ instance Show Expr where
     show (LiteralExpr value)              = wrap $ show value
     show (UnaryExpr operator right)       = wrap $ unwords [show operator, show right]
     show (VariableExpr name)              = wrap $ unwords ["variable:", "\"" ++ name ++ "\""]
-    show (AssignementExpr name expr)      = wrap $ unwords ["variable:", "\"" ++ name ++ "\"", "=", show expr]
+    show (AssignementExpr name expr)      = wrap $ unwords ["variable:", "\"" ++ name ++ "\"", "=",
+                                                            show expr]
+    show (LogicalExpr left sym right)     = wrap $ unwords [show left, show sym, show right]
     show UnknownExpr                      = "{unknown}"
 
 data Symbol = ADD
@@ -44,23 +47,29 @@ data Symbol = ADD
             | DIV
             | EQU
             | NOT
+            | LOR
+            | LAND
 
 instance Show Symbol where
-    show ADD = "+"
-    show SUB = "-"
-    show MUL = "*"
-    show DIV = "/"
-    show EQU = "=="
-    show NOT = "!"
+    show ADD  = "+"
+    show SUB  = "-"
+    show MUL  = "*"
+    show DIV  = "/"
+    show EQU  = "=="
+    show NOT  = "!"
+    show LOR  = "||"
+    show LAND = "&&"
 
 instance Eq Symbol where
-    (==) ADD ADD = True
-    (==) SUB SUB = True
-    (==) MUL MUL = True
-    (==) DIV DIV = True
-    (==) EQU EQU = True
-    (==) NOT NOT = True
-    (==) _ _     = False
+    (==) ADD ADD   = True
+    (==) SUB SUB   = True
+    (==) MUL MUL   = True
+    (==) DIV DIV   = True
+    (==) EQU EQU   = True
+    (==) NOT NOT   = True
+    (==) LOR LOR   = True
+    (==) LAND LAND = True
+    (==) _ _       = False
 
 wrap :: String -> String
 wrap s = "(" ++ s ++ ")"
@@ -179,7 +188,25 @@ parseError (Token tk l p lexeme) message =
 
 
 expression :: [Token] -> (Expr, [Token], [String])
-expression tks = assignement tks
+expression tks = orExpr tks
+
+orExpr :: [Token] -> (Expr, [Token], [String])
+orExpr tks = let (expr, tk:tks', err) = andExpr tks
+             in
+                 case tokenType tk of
+                     (DOUBLE_PIPE) ->
+                         let (expr', tks'', err') = andExpr tks'
+                         in (LogicalExpr expr LOR expr', tks'', err' ++ err)
+                     (_          ) -> (expr, tk:tks', err)
+
+andExpr :: [Token] -> (Expr, [Token], [String])
+andExpr tks = let (expr, tk:tks', err) = assignement tks
+              in
+                  case tokenType tk of
+                      (DOUBLE_AMPERSAND) ->
+                          let (expr', tks'', err') = assignement tks'
+                          in (LogicalExpr expr LAND expr', tks'', err' ++ err)
+                      (_               ) -> (expr, tk:tks', err)
 
 assignement :: [Token] -> (Expr, [Token], [String])
 assignement tks =
