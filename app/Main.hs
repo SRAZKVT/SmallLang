@@ -9,6 +9,7 @@ import Lexer
 import Parser
 import Interpreter
 
+version :: String
 version = "SmallLang 0.1.0.0"
 
 main :: IO ()
@@ -46,7 +47,7 @@ commandHelp = do
                                           "help :: Prints this message"]
 
 commandCom :: String -> IO ()
-commandCom f = do
+commandCom _ = do
     putStrLn "Compiling not implemented yet"
 
 commandRun :: String -> IO ()
@@ -68,8 +69,8 @@ commandRepl env = do
     case s of
         ":q" -> putStrLn "Exiting!" >> exitSuccess
         ""   -> putStr ""
-        s    ->
-            case lex s of
+        content    ->
+            case lex content of
                 (tks, []) ->
                     case parse tks of
                         (stmts, []) ->
@@ -80,7 +81,7 @@ commandRepl env = do
                                 (expr, _:[], []) ->
                                     let (val, envi) = interpretExpr expr env
                                     in print val >> commandRepl envi
-                                (_, _:[], err) -> putStrLn $ unlines err
+                                (_, _:[], err') -> putStrLn $ unlines err'
                                 (_,    _,  _) -> putStrLn $ unlines err
                 (_, err) -> putStrLn $ unlines err
     commandRepl env

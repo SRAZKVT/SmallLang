@@ -110,8 +110,8 @@ updateLexerLine :: LexerState -> LexerState
 updateLexerLine (LexerState s l _) = LexerState (tail $ dropWhile (/= '\n') s) (l + 1) 1
 
 lex :: String -> ([Token], [String])
-lex [] = ([], [])
-lex f  = let (tks, err, _) = lex' ([], [], LexerState f 1 1)
+lex []       = ([], [])
+lex content  = let (tks, err, _) = lex' ([], [], LexerState content 1 1)
          in (reverse tks, reverse err)
     where lex' :: ([Token], [String], LexerState) -> ([Token], [String], LexerState)
           lex' (tks, err, l) =
