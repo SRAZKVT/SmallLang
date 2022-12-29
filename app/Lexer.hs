@@ -32,6 +32,7 @@ data TokenType = PAREN_LEFT
                | TRUE
                | FALSE
                | EOF
+               deriving (Eq)
 
 instance Show TokenType where
     show PAREN_LEFT            = "TOK_PAREN_LEFT"
@@ -60,35 +61,6 @@ instance Show TokenType where
     show TRUE                  = "TOK_TRUE"
     show FALSE                 = "TOK_FALSE"
     show EOF                   = "EOF"
-
-instance Eq TokenType where
-    (==) PAREN_LEFT PAREN_LEFT             = True
-    (==) PAREN_RIGHT PAREN_RIGHT           = True
-    (==) BRACE_LEFT BRACE_LEFT             = True
-    (==) BRACE_RIGHT BRACE_RIGHT           = True
-    (==) EQUAL EQUAL                       = True
-    (==) DOUBLE_EQUAL DOUBLE_EQUAL         = True
-    (==) PLUS PLUS                         = True
-    (==) MINUS MINUS                       = True
-    (==) STAR STAR                         = True
-    (==) SLASH SLASH                       = True
-    (==) BANG BANG                         = True
-    (==) DOUBLE_AMPERSAND DOUBLE_AMPERSAND = True
-    (==) DOUBLE_PIPE DOUBLE_PIPE           = True
-    (==) (STRING a) (STRING b)             = a == b
-    (==) (INTEGER a) (INTEGER b)           = a == b
-    (==) (IDENTIFIER a) (IDENTIFIER b)     = a == b
-    (==) VAR VAR                           = True
-    (==) VAL VAL                           = True
-    (==) IF IF                             = True
-    (==) ELIF ELIF                         = True
-    (==) ELSE ELSE                         = True
-    (==) WHILE WHILE                       = True
-    (==) SEMICOLON SEMICOLON               = True
-    (==) TRUE TRUE                         = True
-    (==) FALSE FALSE                       = True
-    (==) EOF EOF                           = True
-    (==) _ _                               = False
 
 data LexerState = LexerState String Line Position
 

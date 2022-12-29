@@ -7,7 +7,7 @@ import Lexer()
 import Parser
 
 data Value = StringValue String | IntegerValue Integer | BooleanValue Bool | ErrorValue String
-data ValueType = StringType | IntegerType | BooleanType
+data ValueType = StringType | IntegerType | BooleanType deriving (Eq)
 
 data Environment = Environment (Map.Map String Value) (Maybe Environment)
 
@@ -31,12 +31,6 @@ instance Show ValueType where
     show StringType = "String"
     show IntegerType = "Integer"
     show BooleanType = "Boolean"
-
-instance Eq ValueType where
-    (==) StringType StringType   = True
-    (==) BooleanType BooleanType = True
-    (==) IntegerType IntegerType = True
-    (==) _ _                     = False
 
 interpret :: [Stmt] -> Environment -> (IO (), Environment, Bool)
 interpret stmts' env' =

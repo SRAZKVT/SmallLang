@@ -51,37 +51,15 @@ data Symbol = ADD
             | NOT
             | LOR
             | LAND
-
-instance Show Symbol where
-    show ADD  = "+"
-    show SUB  = "-"
-    show MUL  = "*"
-    show DIV  = "/"
-    show EQU  = "=="
-    show NOT  = "!"
-    show LOR  = "||"
-    show LAND = "&&"
-
-instance Eq Symbol where
-    (==) ADD ADD   = True
-    (==) SUB SUB   = True
-    (==) MUL MUL   = True
-    (==) DIV DIV   = True
-    (==) EQU EQU   = True
-    (==) NOT NOT   = True
-    (==) LOR LOR   = True
-    (==) LAND LAND = True
-    (==) _ _       = False
+            deriving (Eq, Show)
 
 wrap :: String -> String
 wrap s = "(" ++ s ++ ")"
 
-data Literal = IntegerLiteral Integer | StringLiteral String | BooleanLiteral Bool
-
-instance Show Literal where
-    show (IntegerLiteral i) = show i
-    show (StringLiteral  s) = "'" ++ s ++ "'"
-    show (BooleanLiteral b) = show b
+data Literal = IntegerLiteral Integer
+             | StringLiteral String
+             | BooleanLiteral Bool
+             deriving (Show)
 
 symbolFromToken :: Token -> Symbol
 symbolFromToken tk = symbolFromTokenType $ tokenType tk
