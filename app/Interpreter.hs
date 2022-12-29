@@ -64,6 +64,11 @@ interpret stmts env =
               let (out, env, success) = interpretIfStmt expr thenBranch elseBranch e
                   ret = (stmts, io >> out, env)
               in if success then interpret' ret else ret
+          interpret' (WhileStmt expr body:stmts, io, e) =
+              let (out, env, success, loop) = interpretWhileStmt expr body e
+                  ret = if loop then (WhileStmt expr body:stmts, io >> out, env)
+                                else (stmts, io >> out, env)
+              in if success then interpret' ret else ret
           interpret' (UnknownStmt:stmts,       io, e)  = interpret' (stmts, io, e)
 
 interpretPrintStmt :: Expr -> Environment -> (IO (), Environment, Bool)
@@ -99,6 +104,15 @@ interpretIfStmt expr ifBranch elseBranch env =
                 (Just branch) -> interpret [branch] envi
                 (Nothing    ) -> (putStr "", envi, True)
         (_,                  envi) -> (putStrLn "An if statement require a boolean result to its expression", envi, False)
+
+interpretWhileStmt :: Expr -> Stmt -> Environment -> (IO (), Environment, Bool, Bool)
+interpretWhileStmt expr body env =
+    case interpretExpr expr env of
+        (BooleanValue True, envi) ->
+            let (io, e, success) = interpret [body] envi
+            in (io, e, success, True)
+        (BooleanValue False, envi) -> (putStr "", envi, True, False)
+        (_, _) -> (putStr "", env, False, True)
 
 envSetVar :: String -> Value -> Environment -> Environment
 envSetVar name val (Environment map env) = Environment (Map.insert name val map) env

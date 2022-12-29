@@ -27,6 +27,7 @@ data TokenType = PAREN_LEFT
                | IF
                | ELIF
                | ELSE
+               | WHILE
                | SEMICOLON
                | TRUE
                | FALSE
@@ -54,6 +55,7 @@ instance Show TokenType where
     show IF                    = "TOK_IF"
     show ELIF                  = "TOK_ELIF"
     show ELSE                  = "TOK_ELSE"
+    show WHILE                 = "TOK_WHILE"
     show SEMICOLON             = "TOK_SEMICOLON"
     show TRUE                  = "TOK_TRUE"
     show FALSE                 = "TOK_FALSE"
@@ -81,6 +83,7 @@ instance Eq TokenType where
     (==) IF IF                             = True
     (==) ELIF ELIF                         = True
     (==) ELSE ELSE                         = True
+    (==) WHILE WHILE                       = True
     (==) SEMICOLON SEMICOLON               = True
     (==) TRUE TRUE                         = True
     (==) FALSE FALSE                       = True
@@ -158,6 +161,7 @@ identifierTokenType "val"   = VAL
 identifierTokenType "if"    = IF
 identifierTokenType "elif"  = ELIF
 identifierTokenType "else"  = ELSE
+identifierTokenType "while" = WHILE
 identifierTokenType "true"  = TRUE
 identifierTokenType "false" = FALSE
 identifierTokenType l       = IDENTIFIER l

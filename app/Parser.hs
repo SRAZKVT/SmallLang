@@ -9,6 +9,7 @@ data Stmt = ExprStmt               Expr
           | VarStmt IdentifierName Expr
           | Block [Stmt]
           | IfStmt Expr Stmt (Maybe Stmt)
+          | WhileStmt Expr Stmt
           | UnknownStmt
 
 instance Show Stmt where
@@ -19,6 +20,7 @@ instance Show Stmt where
     show (IfStmt expr thenBranch (Just elseBranch))    = unwords ["IfStmt:", show expr, show thenBranch,
                                                               "otherwise", show elseBranch]
     show (IfStmt expr thenBranch Nothing)              = unwords ["IfStmt:", show expr, show thenBranch]
+    show (WhileStmt expr stmt)                         = unwords ["WhileStmt:", show expr, show stmt]
     show UnknownStmt                                   = "UnknownStmt"
 
 data Expr = BinaryExpr Expr Symbol Expr
@@ -128,6 +130,7 @@ statement (tk:tks) =
         (IDENTIFIER "print") -> printStatement tks
         (BRACE_LEFT)         -> block tks
         (IF)                 -> ifStatement tks
+        (WHILE)              -> whileStatement tks
         (_)                  -> exprStatement $ tk:tks
 
 printStatement :: [Token] -> (Stmt, [Token], [String])
@@ -170,6 +173,14 @@ ifStatement (tk:tks) =
                    (_          ) -> (UnknownStmt, tk':tks', (parseError tk' "An if statement require it's expression closed by a right parenthesis"):err)
         (_         ) -> (UnknownStmt, tk:tks, [parseError tk "An if statement require it's expression opened by a left parenthesis"])
 
+whileStatement :: [Token] -> (Stmt, [Token], [String])
+whileStatement (tk:tks) =
+    case tokenType tk of
+        (PAREN_LEFT) ->
+            let (expr, tks', err) = exprConsume PAREN_RIGHT $ expression tks
+                (stmt, tks'', err') = statement tks'
+            in (WhileStmt expr stmt, tks'', err' ++ err)
+
 exprStatement :: [Token] -> (Stmt, [Token], [String])
 exprStatement tks =
     let (expr, tks', err) = expression tks
@@ -180,6 +191,12 @@ stmtConsume :: TokenType -> (Stmt, [Token], [String]) -> (Stmt, [Token], [String
 stmtConsume etk (stmt, (Token tk l p lexeme):tks, err)
     | etk == tk = (stmt, tks, err)
     | otherwise = (stmt, (Token tk l p lexeme:tks),
+    parseError (Token tk l p lexeme) (unwords ["Expected:", show etk, "but got:", lexeme]):err)
+
+exprConsume :: TokenType -> (Expr, [Token], [String]) -> (Expr, [Token], [String])
+exprConsume etk (expr, (Token tk l p lexeme):tks, err)
+    | etk == tk = (expr, tks, err)
+    | otherwise = (expr, (Token tk l p lexeme):tks,
     parseError (Token tk l p lexeme) (unwords ["Expected:", show etk, "but got:", lexeme]):err)
 
 parseError :: Token -> String -> String
