@@ -25,7 +25,6 @@ data TokenType = PAREN_LEFT
                | VAR
                | VAL
                | IF
-               | ELIF
                | ELSE
                | WHILE
                | SEMICOLON
@@ -54,7 +53,6 @@ instance Show TokenType where
     show VAR                   = "TOK_VAR"
     show VAL                   = "TOK_VAL"
     show IF                    = "TOK_IF"
-    show ELIF                  = "TOK_ELIF"
     show ELSE                  = "TOK_ELSE"
     show WHILE                 = "TOK_WHILE"
     show SEMICOLON             = "TOK_SEMICOLON"
@@ -131,7 +129,6 @@ identifierTokenType :: Lexeme -> TokenType
 identifierTokenType "var"   = VAR
 identifierTokenType "val"   = VAL
 identifierTokenType "if"    = IF
-identifierTokenType "elif"  = ELIF
 identifierTokenType "else"  = ELSE
 identifierTokenType "while" = WHILE
 identifierTokenType "true"  = TRUE
