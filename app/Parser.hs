@@ -10,7 +10,9 @@ data Stmt = ExprStmt               Expr
           | Block [Stmt]
           | IfStmt Expr Stmt (Maybe Stmt)
           | WhileStmt Expr Stmt
+          | FunctionStmt IdentifierName [IdentifierName] [Stmt]
           | UnknownStmt
+          deriving (Eq)
 
 instance Show Stmt where
     show (ExprStmt  expr)                              = "ExprStmt: " ++ show expr
@@ -21,6 +23,8 @@ instance Show Stmt where
                                                               "otherwise", show elseBranch]
     show (IfStmt expr thenBranch Nothing)              = unwords ["IfStmt:", show expr, show thenBranch]
     show (WhileStmt expr stmt)                         = unwords ["WhileStmt:", show expr, show stmt]
+    show (FunctionStmt name vars stmts)                = unwords ["FunctionDeclStmt:", name,
+                                                                  wrap $ show vars, wrap $ show stmts]
     show UnknownStmt                                   = "UnknownStmt"
 
 data Expr = BinaryExpr Expr Symbol Expr
@@ -30,7 +34,9 @@ data Expr = BinaryExpr Expr Symbol Expr
           | VariableExpr IdentifierName
           | AssignementExpr IdentifierName Expr
           | LogicalExpr Expr Symbol Expr
+          | CallExpr Expr [Expr]
           | UnknownExpr
+          deriving (Eq)
 
 instance Show Expr where
     show (BinaryExpr left operator right) = wrap $ unwords [show operator, show left, show right]
@@ -40,7 +46,9 @@ instance Show Expr where
     show (VariableExpr name)              = wrap $ unwords ["variable:", "\"" ++ name ++ "\""]
     show (AssignementExpr name expr)      = wrap $ unwords ["variable:", "\"" ++ name ++ "\"", "=",
                                                             show expr]
-    show (LogicalExpr left sym right)     = wrap $ unwords [show left, show sym, show right]
+    show (LogicalExpr left sym right)     = wrap $ unwords [show sym, show left, show right]
+    show (CallExpr callee args)           = wrap $ unwords ["function: ", "'" ++ show callee ++ "'",
+                                                            wrap $ show args]
     show UnknownExpr                      = "{unknown}"
 
 data Symbol = ADD
@@ -59,7 +67,7 @@ wrap s = "(" ++ s ++ ")"
 data Literal = IntegerLiteral Integer
              | StringLiteral String
              | BooleanLiteral Bool
-             deriving (Show)
+             deriving (Show, Eq)
 
 symbolFromToken :: Token -> Symbol
 symbolFromToken tk = symbolFromTokenType $ tokenType tk
@@ -89,8 +97,9 @@ declaration :: [Token] -> (Stmt, [Token], [String])
 declaration [] = error "Empty list of tokens"
 declaration (tk:tks) =
     case tokenType tk of
-        (VAR) -> varDeclaration tks
-        (_)                -> statement (tk:tks)
+        (VAR)  -> varDeclaration tks
+        (FUNC) -> funcDeclaration tks
+        (_  )  -> statement (tk:tks)
 
 varDeclaration :: [Token] -> (Stmt, [Token], [String])
 varDeclaration [] = error "Empty list of tokens"
@@ -105,6 +114,47 @@ varDeclaration (tk:tks) =
                 (SEMICOLON) -> (UnknownStmt, tail tks, [parseError (head tks) "Uninitialized variables are not supported"])
                 (_        ) -> (UnknownStmt, tks, [parseError tk "Expected '=' to initialize variables"]))
         (_) -> (UnknownStmt, tks, [parseError tk "Expected valid variable name"])
+
+funcDeclaration :: [Token] -> (Stmt, [Token], [String])
+funcDeclaration [] = error "Empty list of tokens"
+funcDeclaration (tk:tks) =
+    case tokenType tk of
+        (IDENTIFIER s) ->
+            case tokenType $ head tks of
+                (PAREN_LEFT) ->
+                    let (params, tks', err) = funcArgs $ tail tks
+                    in
+                        case tokenType $ head tks' of
+                            (BRACE_LEFT) ->
+                                let (stmt, tks'', err') = block $ tail tks'
+                                in
+                                    case stmt of
+                                        (Block stmts) -> (FunctionStmt s params stmts, tks'', err' ++ err)
+                                        (_          ) -> (UnknownStmt, tks'', err' ++ err)
+                            (_         ) -> (UnknownStmt, tks', "Expected '{' after function parameters":err)
+                (_         ) -> (UnknownStmt, tks, [parseError tk "Expected '(' after function name"])
+        (_           ) -> (UnknownStmt, tks, [parseError tk "Expected function name"])
+
+funcArgs :: [Token] -> ([IdentifierName], [Token], [String])
+funcArgs [] = error "Empty list of tokens"
+funcArgs tks =
+    let (args, tks', err) = funcArgs' ([], tks, [])
+    in (reverse args, tks', err)
+    where funcArgs' :: ([IdentifierName], [Token], [String]) -> ([IdentifierName], [Token], [String])
+          funcArgs' (_, [], _) = error "Empty list of tokens"
+          funcArgs' (args, tk':tks', err)
+              | tokenType tk' == PAREN_RIGHT =
+                  if length tks' >= 255
+                      then (args, tks', "Can't have more than 255 parameters on a function":err)
+                      else (args, tks', err)
+              | otherwise =
+                  case tokenType tk' of
+                      (IDENTIFIER s) ->
+                          let rettks  = if (tokenType $ head tks') == COMMA
+                                            then tail tks'
+                                            else tks'
+                          in funcArgs' (s:args, rettks, err)
+                      (_           ) -> (args, tks, (parseError (head tks') "Function argument names should be identifiers"):err)
 
 statement :: [Token] -> (Stmt, [Token], [String])
 statement [] = error "Empty list of tokens"
@@ -272,7 +322,33 @@ unary [] = error "Empty list of tokens"
 unary (tk:tks)
     | tokenType tk `elem` [MINUS, BANG] = let (expr, tks', err) = unary tks
                                 in (UnaryExpr (symbolFromToken tk) expr, tks', err)
-    | otherwise               = primary (tk:tks)
+    | otherwise               = call (tk:tks)
+
+call :: [Token] -> (Expr, [Token], [String])
+call tks = call' $ primary tks
+    where call' :: (Expr, [Token], [String]) -> (Expr, [Token], [String])
+          call' (_, [], _) = error "Empty list of tokens"
+          call' (expr, tk':tks', err)
+              | tokenType tk' == PAREN_LEFT = call' $ finishCall expr tks' err
+              | otherwise = (expr, tk':tks', err)
+
+finishCall :: Expr -> [Token] -> [String] -> (Expr, [Token], [String])
+finishCall _    []  _   = error "Empty list of tokens"
+finishCall expr tks err =
+    let (tks', err', args) = finishCall' (tks, err, [])
+    in
+        if length args >= 255
+            then (CallExpr expr (reverse args), tks',
+                 (parseError (head tks) "Too many arguments"):(err' ++ err))
+            else (CallExpr expr (reverse args), tks', err' ++ err)
+    where finishCall' :: ([Token], [String], [Expr]) -> ([Token], [String], [Expr])
+          finishCall' ([], _, _) = error "Empty list of tokens"
+          finishCall' (tk':tks', err', args)
+              | tokenType tk' == PAREN_RIGHT = (tks', err', args)
+              | otherwise =
+                  let (expr'', tks'', err'') = expression (tk':tks')
+                      rettks = if tokenType (head tks'') == COMMA then tail tks'' else tks''
+                  in finishCall'(rettks, err'' ++ err', expr'':args)
 
 primary :: [Token] -> (Expr, [Token], [String])
 primary [] = error "Empty list of tokens"

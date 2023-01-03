@@ -6,138 +6,202 @@ import Data.Maybe
 import Lexer()
 import Parser
 
-data Value = StringValue String | IntegerValue Integer | BooleanValue Bool | ErrorValue String
-data ValueType = StringType | IntegerType | BooleanType deriving (Eq)
+data Value = StringValue String
+           | IntegerValue Integer
+           | BooleanValue Bool
+           | ErrorValue String
+           | FunctionValue [IdentifierName] [Stmt]
+           | NoValue
 
-data Environment = Environment (Map.Map String Value) (Maybe Environment)
+data ValueType = StringType
+               | IntegerType
+               | BooleanType
+               | FunctionType
+               deriving (Eq)
+
+data Environment = Environment {
+    variables :: Map.Map String Value,
+    parentEnv :: Maybe Environment,
+    ioOps     :: IO (),
+    succesful :: Bool
+}
 
 instance Show Environment where
-    show (Environment vars (Just env)) = show vars ++ " { " ++ show env ++ " } "
-    show (Environment vars _)          = show vars
+    show (Environment { variables = vars, parentEnv = Just env }) = show vars ++ " { " ++ show env ++ " } "
+    show (Environment { variables = vars})          = show vars
+
+envUnsuccesful :: Environment -> Environment
+envUnsuccesful env = env { succesful = False,
+                           parentEnv = envUnsuccesful <$> parentEnv env }
+
+envAddIO :: IO () -> Environment -> Environment
+envAddIO io env =
+    case parentEnv env of
+        (Nothing) -> env { ioOps = (ioOps env) >> io }
+        (Just en) -> env { parentEnv = Just $ envAddIO io en }
 
 newEnv :: Environment
-newEnv = Environment Map.empty Nothing
+newEnv = Environment Map.empty Nothing (putStr "") True
 
 newEnvWithParent :: Environment -> Environment
-newEnvWithParent e = Environment Map.empty (return e)
+newEnvWithParent e = newEnv { parentEnv = Just e }
+
+envRoot :: Environment -> Environment
+envRoot (Environment { parentEnv = Just env }) = envRoot env
+envRoot env = env
 
 instance Show Value where
-    show (StringValue  s) = "\"" ++ s ++ "\""
-    show (IntegerValue i) = show i
-    show (BooleanValue b) = show b
-    show (ErrorValue   e) = "[ERROR]: " ++ e
+    show (StringValue  s)         = "\"" ++ s ++ "\""
+    show (IntegerValue i)         = show i
+    show (BooleanValue b)         = show b
+    show (FunctionValue args _ ) = "<<function " ++ show args ++ ">>"
+    show (ErrorValue   e)         = "[ERROR]: " ++ e
+    show (NoValue       )         = "NoValue"
 
 instance Show ValueType where
     show StringType = "String"
     show IntegerType = "Integer"
     show BooleanType = "Boolean"
+    show FunctionType = "Function"
 
-interpret :: [Stmt] -> Environment -> (IO (), Environment, Bool)
+interpret :: [Stmt] -> Environment -> (Environment, Bool)
 interpret stmts' env' =
-    let (stmt, io, envi) = interpret' (stmts', putStr "", env')
-    in (io, envi, null stmt)
-    where interpret' :: ([Stmt], IO (), Environment) -> ([Stmt], IO (), Environment)
-          interpret' ([],                      io, e)  = ([], io, e)
-          interpret' (PrintStmt expr:stmts,    io, e)  =
-              let (out, env, success) = interpretPrintStmt expr e
-                  ret = (stmts, io >> out, env)
+    let (_, envi) = interpret' (stmts', env')
+    in (envi, succesful envi)
+    where interpret' :: ([Stmt], Environment) -> ([Stmt], Environment)
+          interpret' ([],                      e)  = ([], e)
+          interpret' (PrintStmt expr:stmts,    e)  =
+              let env = interpretPrintStmt expr e
+                  ret = (stmts, env)
+                  success = succesful env
               in if success then interpret' ret else ret
-          interpret' (ExprStmt expr:stmts,     io, e)  =
-              let (out, env, success) = interpretExprStmt  expr e
-                  ret = (stmts, io >> out, env)
+          interpret' (ExprStmt expr:stmts,     e)  =
+              let env = interpretExprStmt expr e
+                  ret = (stmts, env)
+                  success = succesful env
               in if success then interpret' ret else ret
-          interpret' (VarStmt name expr:stmts, io, e) =
-              let (out, env, success) = interpretVarDef name expr e
-                  ret = (stmts, io >> out, env)
+          interpret' (VarStmt name expr:stmts, e) =
+              let env = interpretVarDef name expr e
+                  ret = (stmts, env)
+                  success = succesful env
               in if success then interpret' ret else ret
-          interpret' (Block stmt:stmts,        io, e) =
-              let (out, Environment _ en, success) = interpret stmt $ newEnvWithParent e
-                  ret = (stmts, io >> out, fromMaybe (error "Root environment not found") en)
+          interpret' (Block stmt:stmts,        e) =
+              let (Environment _ en io _, success) = interpret stmt $ newEnvWithParent e
+                  updParentEnv = (envAddIO io $ fromMaybe (error "Root environment not found") en)
+                                      {succesful = success}
+                  ret = (stmts, updParentEnv)
               in if success then interpret' ret else ret
-          interpret' (IfStmt expr thenBranch elseBranch:stmts, io, e) =
-              let (out, env, success) = interpretIfStmt expr thenBranch elseBranch e
-                  ret = (stmts, io >> out, env)
+          interpret' (IfStmt expr thenBranch elseBranch:stmts, e) =
+              let env = interpretIfStmt expr thenBranch elseBranch e
+                  ret = (stmts, env)
+                  success = succesful env
               in if success then interpret' ret else ret
-          interpret' (WhileStmt expr body:stmts, io, e) =
-              let (out, env, success, loop) = interpretWhileStmt expr body e
-                  ret = if loop then (WhileStmt expr body:stmts, io >> out, env)
-                                else (stmts, io >> out, env)
+          interpret' (WhileStmt expr body:stmts, e) =
+              let (env, loop) = interpretWhileStmt expr body e
+                  ret = if loop then (WhileStmt expr body:stmts, env)
+                                else (stmts, env)
+                  success = succesful env
               in if success then interpret' ret else ret
-          interpret' (UnknownStmt:stmts,       io, e)  = interpret' (stmts, io, e)
+          interpret' (FunctionStmt name args content:stmts, e) =
+              let env = interpretFuncDef name args content e
+                  ret = (stmts, env)
+                  success = succesful env
+              in if success then interpret' ret else ret
+          interpret' (UnknownStmt:stmts,       e)  = interpret' (stmts, e)
 
-interpretPrintStmt :: Expr -> Environment -> (IO (), Environment, Bool)
+interpretPrintStmt :: Expr -> Environment -> Environment
 interpretPrintStmt expr env =
     case interpretExpr expr env of
-        (StringValue  s, envi) -> (putStrLn s, envi, True)
-        (IntegerValue i, envi) -> (print i, envi, True)
-        (BooleanValue b, envi) -> (print b, envi, True)
-        (ErrorValue   e, envi) -> (putStrLn e, envi, False)
-
-interpretExprStmt :: Expr -> Environment -> (IO (), Environment, Bool)
+        (StringValue   s, envi)      -> envAddIO (putStrLn s) envi
+        (IntegerValue  i, envi)      -> envAddIO (print i) envi
+        (BooleanValue  b, envi)      -> envAddIO (print b) envi
+        (FunctionValue args _, envi) -> envAddIO (print (FunctionValue args [])) envi
+        (ErrorValue    e, envi)      -> envAddIO (putStrLn e) $ envUnsuccesful envi
+        (NoValue        , envi)      -> envAddIO (putStrLn "NoValue cannot be evaluated.")
+                                        $ envUnsuccesful envi
+interpretExprStmt :: Expr -> Environment -> Environment
 interpretExprStmt expr env =
     case interpretExpr expr env of
-        (ErrorValue e, envi) -> (putStrLn e, envi, False)
-        (_,            envi) -> (putStr "", envi, True)
+        (ErrorValue e, envi) -> envAddIO (putStrLn e) $ envUnsuccesful envi
+        (_,            envi) -> envi
 
-interpretVarDef :: String -> Expr -> Environment -> (IO (), Environment, Bool)
+interpretVarDef :: String -> Expr -> Environment -> Environment
 interpretVarDef name expr env =
     case envVarExists name env of
         (False) ->
             case interpretExpr expr env of
-                (ErrorValue e, envi) -> (putStrLn e, envi, False)
-                (val, envi)          -> (putStr "", envSetVar name val envi, True)
-        (True)  -> (putStrLn $ unwords ["Variable", "'" ++ name ++ "'", "is already defined"], env, False)
+                (ErrorValue e, envi) -> envAddIO (putStrLn e) $ envUnsuccesful envi
+                (NoValue     , envi) -> envAddIO (putStrLn "NoValue cannot be evaluated")
+                                        $ envUnsuccesful envi
+                (val         , envi) -> envSetVar name val envi
+        (True)  -> envAddIO (putStrLn $ unwords ["Variable", "'" ++ name ++ "'", "is already defined"])
+                    $ envUnsuccesful env
 
-interpretIfStmt :: Expr -> Stmt -> Maybe Stmt -> Environment -> (IO (), Environment, Bool)
+interpretIfStmt :: Expr -> Stmt -> Maybe Stmt -> Environment -> Environment
 interpretIfStmt expr ifBranch elseBranch env =
     case interpretExpr expr env of
-        (ErrorValue      e,  envi) -> (putStrLn e, envi, False)
-        (BooleanValue True,  envi) -> interpret [ifBranch] envi
+        (ErrorValue      e,  envi) -> envAddIO (putStrLn e) envi
+        (NoValue          ,  envi) -> envAddIO (putStrLn "NoValue cannot be evaluated")
+                                      $ envUnsuccesful envi
+        (BooleanValue True,  envi) -> fst $ interpret [ifBranch] envi
         (BooleanValue False, envi) ->
             case elseBranch of
-                (Just branch) -> interpret [branch] envi
-                (Nothing    ) -> (putStr "", envi, True)
-        (_,                  envi) -> (putStrLn "An if statement require a boolean result to its expression", envi, False)
+                (Just branch) -> fst $ interpret [branch] envi
+                (Nothing    ) -> envi
+        (_,                  envi) ->
+            envAddIO (putStrLn "An if statement require a boolean result to its expression")
+            $ envUnsuccesful envi
 
-interpretWhileStmt :: Expr -> Stmt -> Environment -> (IO (), Environment, Bool, Bool)
+interpretWhileStmt :: Expr -> Stmt -> Environment -> (Environment, Bool)
 interpretWhileStmt expr body env =
     case interpretExpr expr env of
+        (ErrorValue      e, envi) -> (envAddIO (putStrLn e) $ envUnsuccesful envi, False)
+        (NoValue          , envi) -> (envAddIO (putStrLn "NoValue cannot be evaluated.")
+                                      $ envUnsuccesful envi, False)
         (BooleanValue True, envi) ->
-            let (io, e, success) = interpret [body] envi
-            in (io, e, success, True)
-        (BooleanValue False, envi) -> (putStr "", envi, True, False)
-        (_, _) -> (putStr "", env, False, True)
+            let (e, _) = interpret [body] envi
+            in (e, True)
+        (BooleanValue False, envi) -> (envi, False)
+        (_, e) -> (envAddIO (putStr "A while statement require a boolean result as its expression")
+                   $ envUnsuccesful e, False)
+
+interpretFuncDef :: IdentifierName -> [IdentifierName] -> [Stmt] -> Environment -> Environment
+interpretFuncDef name args content env
+    | envVarExists name env = envAddIO (putStrLn $ unwords ["Variable of name", name, "already exists"])
+                                         $ envUnsuccesful env
+    | otherwise = envSetVar name (FunctionValue args content) env
 
 envSetVar :: String -> Value -> Environment -> Environment
-envSetVar name val (Environment vars env) = Environment (Map.insert name val vars) env
+envSetVar name val env = env { variables = Map.insert name val (variables env) }
 
 envSetExistingVar :: String -> Value -> Environment -> (Value, Environment)
-envSetExistingVar name val (Environment vars env) =
-    case Map.lookup name vars of
+envSetExistingVar name val env =
+    case Map.lookup name $ variables env of
         (Just  prev) -> if typeOfValue prev == typeOfValue val
-                        then (val, Environment (Map.insert name val vars) env)
-                        else (ErrorValue "Changing type of a variable isn't allowed, you need to explicitly cast it", Environment vars env)
+                        then (val, env { variables = Map.insert name val (variables env) })
+                        else (ErrorValue "Changing type of a variable isn't allowed, you need to explicitly cast it", env)
         (Nothing) ->
-            case env of
+            case parentEnv env of
                 (Just  e) ->
                     let (v, en) = envSetExistingVar name val e
-                    in (v, Environment vars (Just en))
+                    in (v, env { parentEnv = Just en })
                 (Nothing) ->
                     (ErrorValue $ unwords ["Variable", "'" ++ name ++ "'", "isn't defined"],
-                    Environment vars Nothing)
+                    env)
 
 
 envVarExists :: String -> Environment -> Bool
-envVarExists name (Environment vars env) =
+envVarExists name (Environment { variables = vars, parentEnv = env }) =
     case Map.lookup name vars of
         (Just  _) -> True
         (Nothing) -> maybe False (envVarExists name) env
 
 envGetVar :: String -> Environment -> Value
-envGetVar name (Environment vars env) =
+envGetVar name (Environment { variables = vars, parentEnv = env}) =
     case Map.lookup name vars of
         (Just val) -> val
-        (Nothing ) -> maybe (ErrorValue $ unwords ["Variable", "'" ++ name ++ "'", "isn't defined"]) (envGetVar name) env
+        (Nothing ) -> maybe (ErrorValue $ unwords ["Variable", "'" ++ name ++ "'", "isn't defined"])
+                      (envGetVar name) env
 
 interpretExpr :: Expr -> Environment -> (Value, Environment)
 interpretExpr UnknownExpr                 env = (ErrorValue "Unknown expressions cannot be evaluated", env)
@@ -155,6 +219,47 @@ interpretExpr (BinaryExpr left op right)  env =
         (val2, env2) = interpretExpr right env1
     in (interpretExprBinary op val1 val2, env2)
 interpretExpr (LogicalExpr left op right) env = interpretExprLogical left op right env
+interpretExpr (CallExpr callee args)      env =
+    let (func, envi)  = interpretExpr callee env
+        (argsVals, en) = interpretArgs args envi
+    in interpretFunction func argsVals en
+
+interpretArgs :: [Expr] -> Environment -> ([Value], Environment)
+interpretArgs exprs env =
+    let (_, envi, vals) = interpretArgs' (exprs, env, [])
+    in (reverse vals, envi)
+    where interpretArgs' :: ([Expr], Environment, [Value]) -> ([Expr], Environment, [Value])
+          interpretArgs' ([], en, vals) = ([], en, vals)
+          interpretArgs' (expr:exprs', en, vals) =
+              let (val, envi) = interpretExpr expr en
+              in interpretArgs' (exprs', envi, val:vals)
+
+interpretFunction :: Value -> [Value] -> Environment -> (Value, Environment)
+interpretFunction (ErrorValue e) _ en = (ErrorValue e, en)
+interpretFunction (NoValue) _ en = (ErrorValue "NoValue cannot be evaluated", en)
+interpretFunction f args env
+    | functionArity f /= length args = (ErrorValue "Function arity mismatch", env)
+    | otherwise =
+        case f of
+            (FunctionValue params content) ->
+                let envi = setArgs params args $ newEnvWithParent $ envRoot env
+                    (en, _) = interpret content envi
+                    e = mergeEnvRoots env $ fromMaybe (error "Parent env not found") (parentEnv en)
+                in (NoValue, e)
+            (_) -> (ErrorValue "Only functions can be called", env)
+
+mergeEnvRoots :: Environment -> Environment -> Environment
+mergeEnvRoots local rootEnv =
+    case parentEnv local of
+        (Nothing) -> local { variables = Map.intersection (variables local) (variables rootEnv),
+                             succesful = succesful rootEnv, ioOps = ioOps rootEnv}
+        (Just en) -> local { parentEnv = Just $ mergeEnvRoots en rootEnv }
+
+setArgs :: [IdentifierName] -> [Value] -> Environment -> Environment
+setArgs [] (_:_) _ = error "Mismatch in count of arguments and values"
+setArgs (_:_) [] _ = error "Mismatch in count of arguments and values"
+setArgs [] [] env  = env
+setArgs (a:as) (v:vs) env = setArgs as vs $ envSetVar a v env
 
 interpretExprLiteral :: Literal -> Value
 interpretExprLiteral (StringLiteral  s) = StringValue  s
@@ -163,6 +268,7 @@ interpretExprLiteral (BooleanLiteral b) = BooleanValue b
 
 interpretExprUnary :: Symbol -> Value -> Value
 interpretExprUnary _ (ErrorValue s)     = ErrorValue s
+interpretExprUnary _ (NoValue)          = ErrorValue "NoValue cannot be evaluated."
 interpretExprUnary SUB (IntegerValue i) = IntegerValue (negate i)
 interpretExprUnary NOT (BooleanValue b) = BooleanValue (not b)
 interpretExprUnary op val               = ErrorValue (unwords
@@ -171,6 +277,8 @@ interpretExprUnary op val               = ErrorValue (unwords
                                                         "'" ++ show (typeOfValue val) ++ "'"])
 
 interpretExprBinary :: Symbol -> Value -> Value -> Value
+interpretExprBinary _ (NoValue) _                           = ErrorValue "NoValue cannot be evaluated."
+interpretExprBinary _ _ (NoValue)                           = ErrorValue "NoValue cannot be evaluated."
 interpretExprBinary _ (ErrorValue s1) (ErrorValue s2)       = ErrorValue (s1 ++ s2)
 interpretExprBinary _ (ErrorValue s) _                      = ErrorValue s
 interpretExprBinary _ _ (ErrorValue s)                      = ErrorValue s
@@ -196,15 +304,27 @@ interpretExprBinary op val1 val2                            = ErrorValue (unword
 interpretExprLogical :: Expr -> Symbol -> Expr -> Environment -> (Value, Environment)
 interpretExprLogical left LOR right env =
     case interpretExpr left env of
+        (NoValue           , en) -> (ErrorValue "NoValue cannot be evaluated.", en)
         (BooleanValue True,  en) -> (BooleanValue True, en)
-        (BooleanValue False, en) -> interpretExpr right en
+        (BooleanValue False, en) ->
+            case interpretExpr right en of
+                (BooleanValue b, envi) -> (BooleanValue b, envi)
+                (val,            envi) -> (ErrorValue $ unwords ["Right side of expression expected to be a boolean, got:", show $ typeOfValue val], envi)
         (val               , en) -> (ErrorValue $ unwords ["Left side of a logical expression have to be a boolean, got:", show val], en)
 interpretExprLogical left LAND right env =
     case interpretExpr left env of
-        (BooleanValue True,  en) -> interpretExpr right en
+        (NoValue           , en) -> (ErrorValue "NoValue cannot be evaluated.", en)
+        (BooleanValue True,  en) ->
+            case interpretExpr right en of
+                (BooleanValue b, envi) -> (BooleanValue b, envi)
+                (val,            envi) -> (ErrorValue $ unwords ["Right side of expression expected to be a boolean, got:", show $ typeOfValue val], envi)
         (BooleanValue False, en) -> (BooleanValue False, en)
         (val               , en) -> (ErrorValue $ unwords ["Left side of a logical expression have to be a boolean, got:", show val], en)
 interpretExprLogical _ sym _ _ = error $ "Unexpected logical operation: " ++ show sym
+
+functionArity :: Value -> Int
+functionArity (FunctionValue args _) = length args
+functionArity _                      = -1
 
 isEqual :: Value -> Value -> Value
 isEqual val1 val2
@@ -214,6 +334,10 @@ isEqual val1 val2
             (StringValue  a, StringValue  b) -> BooleanValue (a == b)
             (IntegerValue a, IntegerValue b) -> BooleanValue (a == b)
             (BooleanValue a, BooleanValue b) -> BooleanValue (a == b)
+            (FunctionValue args1 stmts1, FunctionValue args2 stmts2) ->
+                BooleanValue $ (args1 == args2) && (stmts1 == stmts2)
+            (NoValue,                     _) -> ErrorValue "NoValue cannot be evaluated."
+            (_,                     NoValue) -> ErrorValue "NoValue cannot be evaluated."
             (_             ,              _) -> ErrorValue "Unhandled equality operation"
 
 cast :: Value -> ValueType -> Value
@@ -225,4 +349,5 @@ typeOfValue :: Value -> ValueType
 typeOfValue (StringValue  _) = StringType
 typeOfValue (IntegerValue _) = IntegerType
 typeOfValue (BooleanValue _) = BooleanType
+typeOfValue (FunctionValue _ _) = FunctionType
 typeOfValue (_)              = error "Unknown type of value"

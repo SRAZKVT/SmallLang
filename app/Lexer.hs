@@ -2,14 +2,13 @@ module Lexer where
 
 import Data.Char
 
-type Line = Int
-type Position = Int
 type Lexeme = String
 
 data TokenType = PAREN_LEFT
                | PAREN_RIGHT
                | BRACE_LEFT
                | BRACE_RIGHT
+               | COMMA
                | EQUAL
                | DOUBLE_EQUAL
                | PLUS
@@ -23,6 +22,7 @@ data TokenType = PAREN_LEFT
                | INTEGER Integer
                | IDENTIFIER Lexeme
                | VAR
+               | FUNC
                | VAL
                | IF
                | ELSE
@@ -38,6 +38,7 @@ instance Show TokenType where
     show PAREN_RIGHT           = "TOK_PAREN_RIGHT"
     show BRACE_LEFT            = "TOK_BRACE_LEFT"
     show BRACE_RIGHT           = "TOK_BRACE_RIGHT"
+    show COMMA                 = "TOK_COMMA"
     show EQUAL                 = "TOK_EQUAL"
     show DOUBLE_EQUAL          = "TOK_DOUBLE_EQUAL"
     show PLUS                  = "TOK_PLUS"
@@ -51,6 +52,7 @@ instance Show TokenType where
     show (INTEGER i)           = "TOK_INT: '" ++ show i ++ "'"
     show (IDENTIFIER l)        = "TOK_IDENTIFIER: '" ++ l ++ "'"
     show VAR                   = "TOK_VAR"
+    show FUNC                  = "TOK_FUNC"
     show VAL                   = "TOK_VAL"
     show IF                    = "TOK_IF"
     show ELSE                  = "TOK_ELSE"
@@ -60,18 +62,26 @@ instance Show TokenType where
     show FALSE                 = "TOK_FALSE"
     show EOF                   = "EOF"
 
-data LexerState = LexerState String Line Position
+data LexerState = LexerState {
+    remainingCharacters :: String,
+    line                :: Int,
+    position            :: Int
+}
 
-data Token = Token TokenType Line Position Lexeme
-
-tokenType :: Token -> TokenType
-tokenType (Token tk _ _ _) = tk
+data Token = Token {
+    tokenType    :: TokenType,
+    tokLine      :: Int,
+    tokPosition  :: Int,
+    tokLexeme    :: Lexeme
+}
 
 newToken :: TokenType -> LexerState -> Lexeme -> Token
-newToken tk (LexerState _ line pos) lexeme = (Token tk line pos lexeme)
-
-getLexerContent :: LexerState -> String
-getLexerContent (LexerState s _ _) = s
+newToken tk lexerState lexeme = Token {
+    tokenType   = tk,
+    tokLine     = line lexerState,
+    tokPosition = position lexerState,
+    tokLexeme   = lexeme
+}
 
 updateLexerState :: LexerState -> Int -> LexerState
 updateLexerState (LexerState s l p) amt = LexerState (drop amt s) l (p + amt)
@@ -85,8 +95,8 @@ lex content  = let (tks, err, _) = lex' ([], [], LexerState content 1 1)
          in (reverse tks, reverse err)
     where lex' :: ([Token], [String], LexerState) -> ([Token], [String], LexerState)
           lex' (tks, err, l) =
-              case getLexerContent l of
-                  ("")        ->      (newToken EOF          l "End of file"  :tks, err, l)
+              case remainingCharacters l of
+                  ("")        ->      (newToken EOF              l "End of file"  :tks, err, l)
                   ('/':'/':_) -> lex' (tks, err, updateLexerLine l)
                   ('\n':_)    -> lex' (tks, err, updateLexerLine l)
                   (' ':_)     -> lex' (tks, err, updateLexerState l 1)
@@ -97,6 +107,7 @@ lex content  = let (tks, err, _) = lex' ([], [], LexerState content 1 1)
                   (')':_)     -> lex' (newToken PAREN_RIGHT      l ")" :tks, err, updateLexerState l 1)
                   ('{':_)     -> lex' (newToken BRACE_LEFT       l "{" :tks, err, updateLexerState l 1)
                   ('}':_)     -> lex' (newToken BRACE_RIGHT      l "}" :tks, err, updateLexerState l 1)
+                  (',':_)     -> lex' (newToken COMMA            l "," :tks, err, updateLexerState l 1)
                   ('+':_)     -> lex' (newToken PLUS             l "+" :tks, err, updateLexerState l 1)
                   ('-':_)     -> lex' (newToken MINUS            l "-" :tks, err, updateLexerState l 1)
                   ('*':_)     -> lex' (newToken STAR             l "*" :tks, err, updateLexerState l 1)
@@ -128,6 +139,7 @@ lex content  = let (tks, err, _) = lex' ([], [], LexerState content 1 1)
 identifierTokenType :: Lexeme -> TokenType
 identifierTokenType "var"   = VAR
 identifierTokenType "val"   = VAL
+identifierTokenType "func"  = FUNC
 identifierTokenType "if"    = IF
 identifierTokenType "else"  = ELSE
 identifierTokenType "while" = WHILE
