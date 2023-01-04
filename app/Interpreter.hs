@@ -64,50 +64,55 @@ instance Show ValueType where
     show BooleanType = "Boolean"
     show FunctionType = "Function"
 
-interpret :: [Stmt] -> Environment -> (Environment, Bool)
+interpret :: [Stmt] -> Environment -> (Environment, Bool, Maybe Value)
 interpret stmts' env' =
-    let (_, envi) = interpret' (stmts', env')
-    in (envi, succesful envi)
-    where interpret' :: ([Stmt], Environment) -> ([Stmt], Environment)
-          interpret' ([],                      e)  = ([], e)
-          interpret' (PrintStmt expr:stmts,    e)  =
+    let (_, envi, val) = interpret' (stmts', env', Nothing)
+    in (envi, succesful envi, val)
+    where interpret' :: ([Stmt], Environment, Maybe Value) -> ([Stmt], Environment, Maybe Value)
+          interpret' ([],                      e, _)  = ([], e, Nothing)
+          interpret' (PrintStmt expr:stmts,    e, _)  =
               let env = interpretPrintStmt expr e
-                  ret = (stmts, env)
+                  ret = (stmts, env, Nothing)
                   success = succesful env
               in if success then interpret' ret else ret
-          interpret' (ExprStmt expr:stmts,     e)  =
+          interpret' (ExprStmt expr:stmts,     e, _)  =
               let env = interpretExprStmt expr e
-                  ret = (stmts, env)
+                  ret = (stmts, env, Nothing)
                   success = succesful env
               in if success then interpret' ret else ret
-          interpret' (VarStmt name expr:stmts, e) =
+          interpret' (VarStmt name expr:stmts, e, _) =
               let env = interpretVarDef name expr e
-                  ret = (stmts, env)
+                  ret = (stmts, env, Nothing)
                   success = succesful env
               in if success then interpret' ret else ret
-          interpret' (Block stmt:stmts,        e) =
-              let (Environment _ en io _, success) = interpret stmt $ newEnvWithParent e
+          interpret' (Block stmt:stmts,        e, _) =
+              let (Environment {ioOps = io, parentEnv = en}, success, val) = interpret stmt
+                                                                             $ newEnvWithParent e
                   updParentEnv = (envAddIO io $ fromMaybe (error "Root environment not found") en)
                                       {succesful = success}
-                  ret = (stmts, updParentEnv)
-              in if success then interpret' ret else ret
-          interpret' (IfStmt expr thenBranch elseBranch:stmts, e) =
-              let env = interpretIfStmt expr thenBranch elseBranch e
-                  ret = (stmts, env)
+                  ret = (stmts, updParentEnv, val)
+              in if success && isNothing val then interpret' ret else ret
+          interpret' (IfStmt expr thenBranch elseBranch:stmts, e, _) =
+              let (env, val) = interpretIfStmt expr thenBranch elseBranch e
+                  ret = (stmts, env, val)
                   success = succesful env
-              in if success then interpret' ret else ret
-          interpret' (WhileStmt expr body:stmts, e) =
-              let (env, loop) = interpretWhileStmt expr body e
-                  ret = if loop then (WhileStmt expr body:stmts, env)
-                                else (stmts, env)
+              in if success && isNothing val then interpret' ret else ret
+          interpret' (WhileStmt expr body:stmts, e, _) =
+              let (env, val, loop) = interpretWhileStmt expr body e
+                  ret = if loop then (WhileStmt expr body:stmts, env, val)
+                                else (stmts, env, val)
                   success = succesful env
-              in if success then interpret' ret else ret
-          interpret' (FunctionStmt name args content:stmts, e) =
+              in if success && isNothing val then interpret' ret else ret
+          interpret' (FunctionStmt name args content:stmts, e, _) =
               let env = interpretFuncDef name args content e
-                  ret = (stmts, env)
+                  ret = (stmts, env, Nothing)
                   success = succesful env
               in if success then interpret' ret else ret
-          interpret' (UnknownStmt:stmts,       e)  = interpret' (stmts, e)
+          interpret' (ReturnStmt expr:stmts, e, _) =
+              let (val, env) = maybe (NoValue, e) (flip interpretExpr e) expr
+                  ret = (stmts, env, Just val)
+              in ret
+          interpret' (UnknownStmt:stmts,       e, _)  = interpret' (stmts, e, Nothing)
 
 interpretPrintStmt :: Expr -> Environment -> Environment
 interpretPrintStmt expr env =
@@ -137,33 +142,37 @@ interpretVarDef name expr env =
         (True)  -> envAddIO (putStrLn $ unwords ["Variable", "'" ++ name ++ "'", "is already defined"])
                     $ envUnsuccesful env
 
-interpretIfStmt :: Expr -> Stmt -> Maybe Stmt -> Environment -> Environment
+interpretIfStmt :: Expr -> Stmt -> Maybe Stmt -> Environment -> (Environment, Maybe Value)
 interpretIfStmt expr ifBranch elseBranch env =
     case interpretExpr expr env of
-        (ErrorValue      e,  envi) -> envAddIO (putStrLn e) envi
-        (NoValue          ,  envi) -> envAddIO (putStrLn "NoValue cannot be evaluated")
-                                      $ envUnsuccesful envi
-        (BooleanValue True,  envi) -> fst $ interpret [ifBranch] envi
+        (ErrorValue      e,  envi) -> (envAddIO (putStrLn e) envi, Nothing)
+        (NoValue          ,  envi) -> (envAddIO (putStrLn "NoValue cannot be evaluated")
+                                      $ envUnsuccesful envi, Nothing)
+        (BooleanValue True,  envi) ->
+            case interpret [ifBranch] envi of
+                (en, _, val) -> (en, val) 
         (BooleanValue False, envi) ->
             case elseBranch of
-                (Just branch) -> fst $ interpret [branch] envi
-                (Nothing    ) -> envi
+                (Just branch) ->
+                    case interpret [branch] envi of
+                        (en, _, val) -> (en, val)
+                (Nothing    ) -> (envi, Nothing)
         (_,                  envi) ->
-            envAddIO (putStrLn "An if statement require a boolean result to its expression")
-            $ envUnsuccesful envi
+            (envAddIO (putStrLn "An if statement require a boolean result to its expression")
+            $ envUnsuccesful envi, Nothing)
 
-interpretWhileStmt :: Expr -> Stmt -> Environment -> (Environment, Bool)
+interpretWhileStmt :: Expr -> Stmt -> Environment -> (Environment, Maybe Value, Bool)
 interpretWhileStmt expr body env =
     case interpretExpr expr env of
-        (ErrorValue      e, envi) -> (envAddIO (putStrLn e) $ envUnsuccesful envi, False)
+        (ErrorValue      e, envi) -> (envAddIO (putStrLn e) $ envUnsuccesful envi, Nothing, False)
         (NoValue          , envi) -> (envAddIO (putStrLn "NoValue cannot be evaluated.")
-                                      $ envUnsuccesful envi, False)
+                                      $ envUnsuccesful envi, Nothing, False)
         (BooleanValue True, envi) ->
-            let (e, _) = interpret [body] envi
-            in (e, True)
-        (BooleanValue False, envi) -> (envi, False)
+            let (e, _, val) = interpret [body] envi
+            in (e, val, True)
+        (BooleanValue False, envi) -> (envi, Nothing, False)
         (_, e) -> (envAddIO (putStr "A while statement require a boolean result as its expression")
-                   $ envUnsuccesful e, False)
+                   $ envUnsuccesful e, Nothing, False)
 
 interpretFuncDef :: IdentifierName -> [IdentifierName] -> [Stmt] -> Environment -> Environment
 interpretFuncDef name args content env
@@ -237,16 +246,16 @@ interpretArgs exprs env =
 interpretFunction :: Value -> [Value] -> Environment -> (Value, Environment)
 interpretFunction (ErrorValue e) _ en = (ErrorValue e, en)
 interpretFunction (NoValue) _ en = (ErrorValue "NoValue cannot be evaluated", en)
-interpretFunction f args env
-    | functionArity f /= length args = (ErrorValue "Function arity mismatch", env)
-    | otherwise =
-        case f of
-            (FunctionValue params content) ->
+interpretFunction f args env =
+    case f of
+        (FunctionValue params content)
+            | functionArity f /= length args -> (ErrorValue "Function arity mismatch", env)
+            | otherwise ->
                 let envi = setArgs params args $ newEnvWithParent $ envRoot env
-                    (en, _) = interpret content envi
+                    (en, _, val) = interpret content envi
                     e = mergeEnvRoots env $ fromMaybe (error "Parent env not found") (parentEnv en)
-                in (NoValue, e)
-            (_) -> (ErrorValue "Only functions can be called", env)
+                in (fromMaybe NoValue val, e)
+        (_) -> (ErrorValue "Only functions can be called", env)
 
 mergeEnvRoots :: Environment -> Environment -> Environment
 mergeEnvRoots local rootEnv =

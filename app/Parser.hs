@@ -11,6 +11,7 @@ data Stmt = ExprStmt               Expr
           | IfStmt Expr Stmt (Maybe Stmt)
           | WhileStmt Expr Stmt
           | FunctionStmt IdentifierName [IdentifierName] [Stmt]
+          | ReturnStmt (Maybe Expr)
           | UnknownStmt
           deriving (Eq)
 
@@ -25,6 +26,7 @@ instance Show Stmt where
     show (WhileStmt expr stmt)                         = unwords ["WhileStmt:", show expr, show stmt]
     show (FunctionStmt name vars stmts)                = unwords ["FunctionDeclStmt:", name,
                                                                   wrap $ show vars, wrap $ show stmts]
+    show (ReturnStmt expr)                             = unwords ["ReturnStmt:", show expr]
     show UnknownStmt                                   = "UnknownStmt"
 
 data Expr = BinaryExpr Expr Symbol Expr
@@ -164,6 +166,7 @@ statement (tk:tks) =
         (BRACE_LEFT)         -> block tks
         (IF)                 -> ifStatement tks
         (WHILE)              -> whileStatement tks
+        (RETURN)             -> returnStatement tks
         (_)                  -> exprStatement $ tk:tks
 
 printStatement :: [Token] -> (Stmt, [Token], [String])
@@ -218,6 +221,15 @@ whileStatement (tk:tks) =
                 (stmt, tks'', err') = statement tks'
             in (WhileStmt expr stmt, tks'', err' ++ err)
         (_         ) -> (UnknownStmt, tk:tks, ["Require '(' after a 'while'"])
+
+returnStatement :: [Token] -> (Stmt, [Token], [String])
+returnStatement [] = error "Empty list of tokens"
+returnStatement (tk:tks) =
+    case tokenType tk of
+        (SEMICOLON) -> (ReturnStmt Nothing, tks, [])
+        (_) ->
+            let (expr, tks', err) = exprConsume SEMICOLON $ expression (tk:tks)
+            in (ReturnStmt (Just expr), tks', err)
 
 exprStatement :: [Token] -> (Stmt, [Token], [String])
 exprStatement tks =
