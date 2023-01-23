@@ -33,6 +33,7 @@ main = do
                 "com"     -> commandCom f
                 "run"     -> commandRun f
                 "dev"     -> commandDev f
+                "ast"     -> commandAst f
                 _         -> commandUnknown args
 
 commandHelp :: IO ()
@@ -44,6 +45,7 @@ commandHelp = do
                                           "run  :: Runs the file",
                                           "repl :: Runs a REPL",
                                           "ver  :: Prints the version of the compiler",
+                                          "ast  :: Prints out the AST of the program",
                                           "help :: Prints this message"]
 
 commandCom :: String -> IO ()
@@ -80,11 +82,22 @@ commandRepl env = do
                             case expression tks  of
                                 (expr, _:[], []) ->
                                     let (val, envi) = interpretExpr expr env
-                                    in print val >> ioOps envi >> commandRepl envi { ioOps = putStr "" }
+                                    in ioOps envi >> print val >> commandRepl envi { ioOps = putStr "" }
                                 (_, _:[], err') -> putStrLn $ unlines err'
                                 (_,    _,  _) -> putStrLn $ unlines err
                 (_, err) -> putStrLn $ unlines err
     commandRepl env
+
+commandAst :: String -> IO ()
+commandAst f = do
+    let (tks, err) = lex f
+    if not $ null err
+        then putStrLn $ unlines err
+        else do
+            let (stmts, err') = parse tks
+            if not $ null err'
+                then putStrLn $ unlines err
+                else putStrLn $ unlines $ map show stmts
 
 commandDev :: String -> IO ()
 commandDev f = do
@@ -96,7 +109,7 @@ commandDev f = do
     print err
     let (stmts, err') = parse tks
     putStrLn "AST:"
-    print stmts
+    putStrLn $ unlines $ map show stmts
     putStrLn $ unlines err'
     let (envi, _, _) = interpret stmts newEnv
     ioOps envi

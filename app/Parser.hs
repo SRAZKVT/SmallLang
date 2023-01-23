@@ -16,17 +16,34 @@ data Stmt = ExprStmt               Expr
           deriving (Eq)
 
 instance Show Stmt where
-    show (ExprStmt  expr)                              = "ExprStmt: " ++ show expr
-    show (PrintStmt expr)                              = "PrintStmt: " ++ show expr
-    show (VarStmt name expr)                           = "VarDecStmt: '" ++ name ++ "' = " ++ show expr
-    show (Block stmts)                                 = "Block: " ++ "{" ++ show stmts ++ "}"
-    show (IfStmt expr thenBranch (Just elseBranch))    = unwords ["IfStmt:", show expr, show thenBranch,
-                                                              "otherwise", show elseBranch]
-    show (IfStmt expr thenBranch Nothing)              = unwords ["IfStmt:", show expr, show thenBranch]
-    show (WhileStmt expr stmt)                         = unwords ["WhileStmt:", show expr, show stmt]
-    show (FunctionStmt name vars stmts)                = unwords ["FunctionDeclStmt:", name,
-                                                                  wrap $ show vars, wrap $ show stmts]
-    show (ReturnStmt expr)                             = unwords ["ReturnStmt:", show expr]
+    show (ExprStmt  expr)                              = init $ unlines ["ExprStmt:",
+                                                                         padLeft $ show expr]
+    show (PrintStmt expr)                              = init $ unlines ["PrintStmt:",
+                                                                         padLeft $ show expr]
+    show (VarStmt name expr)                           = init $ unlines ["VarDecStmt:'" ++ name ++ "' =",
+                                                                         padLeft $ show expr]
+    show (Block stmts)                                 = init $ unlines ["Block:",
+                                                                         padLeft $ init $ unlines $ map show stmts]
+    show (IfStmt expr thenBranch (Just elseBranch))    = init $ unlines ["IfStmt:",
+                                                                         padLeft $ show expr,
+                                                                         padLeft "ThenBranch:",
+                                                                         padLeft $ padLeft $ show thenBranch,
+                                                                         padLeft "OtherwiseBranch:",
+                                                                         padLeft $ padLeft $ show elseBranch]
+    show (IfStmt expr thenBranch Nothing)              = init $ unlines ["IfStmt:",
+                                                                         padLeft $ show expr,
+                                                                         padLeft "ThenBranch:",
+                                                                         padLeft $ padLeft $ show thenBranch]
+    show (WhileStmt expr stmt)                         = init $ unlines ["WhileStmt:",
+                                                                         padLeft $ show expr,
+                                                                         padLeft "DoBranch:",
+                                                                         padLeft $ padLeft $ show stmt]
+    show (FunctionStmt name vars stmts)                = init $ unlines ["FunctionDeclStmt: " ++ name,
+                                                                         "With Args: " ++ show vars,
+                                                                         padLeft $ init $ unlines $ map show stmts]
+    show (ReturnStmt (Just expr))                      = init $ unlines ["ReturnStmt:",
+                                                                         padLeft $ show expr]
+    show (ReturnStmt Nothing)                          = "ReturnStmt"
     show UnknownStmt                                   = "UnknownStmt"
 
 data Expr = BinaryExpr Expr Symbol Expr
@@ -40,17 +57,27 @@ data Expr = BinaryExpr Expr Symbol Expr
           | UnknownExpr
           deriving (Eq)
 
+
+padLeft :: String -> String
+padLeft l = init $ unlines $ map (\s -> replicate padding ' ' ++ s) $ lines l
+
+padding :: Int
+padding = 4
+
 instance Show Expr where
-    show (BinaryExpr left operator right) = wrap $ unwords [show operator, show left, show right]
+    show (BinaryExpr left operator right) = unlines [show operator,
+                                                     padLeft $ show left,
+                                                     padLeft $ show right]
     show (GroupingExpr expr)              = wrap $ show expr
-    show (LiteralExpr value)              = wrap $ show value
-    show (UnaryExpr operator right)       = wrap $ unwords [show operator, show right]
-    show (VariableExpr name)              = wrap $ unwords ["variable:", "\"" ++ name ++ "\""]
-    show (AssignementExpr name expr)      = wrap $ unwords ["variable:", "\"" ++ name ++ "\"", "=",
-                                                            show expr]
-    show (LogicalExpr left sym right)     = wrap $ unwords [show sym, show left, show right]
-    show (CallExpr callee args)           = wrap $ unwords ["function: ", "'" ++ show callee ++ "'",
-                                                            wrap $ show args]
+    show (LiteralExpr value)              = show value
+    show (UnaryExpr operator right)       = unwords [show operator, show right]
+    show (VariableExpr name)              = unwords ["variable:", "\"" ++ name ++ "\""]
+    show (AssignementExpr name expr)      = unwords ["variable:", "\"" ++ name ++ "\"", "=",
+                                                     show expr]
+    show (LogicalExpr left sym right)     = unwords [show sym, show left, show right]
+    show (CallExpr callee args)           = init $ unlines ["function call: ",
+                                                            padLeft $ show callee,
+                                                            padLeft $ init $ unlines $ map show args]
     show UnknownExpr                      = "{unknown}"
 
 data Symbol = ADD
@@ -64,12 +91,19 @@ data Symbol = ADD
             deriving (Eq, Show)
 
 wrap :: String -> String
-wrap s = "(" ++ s ++ ")"
+wrap s = unlines ["(",
+                  padLeft s,
+                  ")"]
 
 data Literal = IntegerLiteral Integer
              | StringLiteral String
              | BooleanLiteral Bool
-             deriving (Show, Eq)
+             deriving (Eq)
+
+instance Show Literal where
+    show (IntegerLiteral i) = show i
+    show (StringLiteral  s) = show s
+    show (BooleanLiteral b) = show b
 
 symbolFromToken :: Token -> Symbol
 symbolFromToken tk = symbolFromTokenType $ tokenType tk

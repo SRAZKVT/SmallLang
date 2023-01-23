@@ -1,18 +1,20 @@
-cabal-version:      2.4
-name:               SmallLang
-version:            0.1.0.0
-
-license:            MIT
-author:             SRAZKVT
-maintainer:         sarah.mathey66666@gmail.com
+cabal-version: 2.4
+name:          SmallLang
+version:       0.1.0.0
+license:       MIT
+maintainer:    sarah.mathey66666@gmail.com
+author:        SRAZKVT
 
 executable SmallLang
     main-is:          Main.hs
-    other-modules:    Parser,
-                      Lexer,
-                      Interpreter
-    build-depends:    base ^>=4.16.3.0,
-                      containers >= 0.6.5 && < 0.7,
     hs-source-dirs:   app
+    other-modules:
+        Parser
+        Lexer
+        Interpreter
+
     default-language: Haskell2010
-    ghc-options: -Wall
+    ghc-options:      -Wall
+    build-depends:
+        base ^>=4.16.3.0,
+        containers >=0.6.5 && <0.7
